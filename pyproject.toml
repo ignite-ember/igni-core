@@ -83,13 +83,15 @@ dependencies = [
     # transitive dependency, which a security control may not rely on.
     "cryptography~=50.0",
     "aiofiles~=25.1.0",
-    # The document readers — python-docx, python-pptx, openpyxl,
-    # beautifulsoup4, youtube_transcript_api, arxiv, wikipedia — and
-    # weasyprint for PDF export were here because the document store
-    # lived here. It is the Artifacts extension now, and they are its
-    # dependencies. Nothing left in igni imports any of them.
-    # pypdf reads an attached PDF's text into the message (core/utils/attached_pdf_text.py).
+    # igni reads common documents itself: an attached PDF, spreadsheet,
+    # Word or PowerPoint file reaches the model as text (core/documents/).
+    # Creating and exporting documents stays with the Artifacts extension,
+    # whose dependencies are beautifulsoup4, youtube_transcript_api, arxiv,
+    # wikipedia and weasyprint.
     "pypdf~=7.2.0",
+    "openpyxl~=3.1.5",
+    "python-docx~=1.2.0",
+    "python-pptx~=1.0.2",
     "dateparser~=1.4.0",
     "websockets~=16.0",
     # Server discovery reads a TXT record in the customer's own zone,

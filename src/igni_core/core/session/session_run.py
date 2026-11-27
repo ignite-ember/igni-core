@@ -29,10 +29,10 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 
 from igni_core.core.config.settings import Settings
+from igni_core.core.documents.attached import AttachedDocumentText
 from igni_core.core.hooks.events import HookEvent
 from igni_core.core.session.core import Session
 from igni_core.core.session.schemas import MessageMedia, SessionLifecyclePayload
-from igni_core.core.utils.attached_pdf_text import AttachedPdfText
 from igni_core.core.utils.display_schemas import RunStats
 from igni_core.core.utils.media import MediaResolver
 from igni_core.core.utils.mentions import process_file_mentions
@@ -123,7 +123,7 @@ class SessionRun(ABC):
         if resolved_files:
             display.print_info(f"Resolved: {', '.join(resolved_files)}")
 
-        message = AttachedPdfText.collect(resolution.attachable).wrap(message)
+        message = AttachedDocumentText.collect(resolution.attachable).wrap(message)
         media = self._vision_media(resolver, resolution.attachable)
         if media is not None:
             display.print_info(f"Attached: {len(resolution.attachable)} file(s)")

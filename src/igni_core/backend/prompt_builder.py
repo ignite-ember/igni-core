@@ -26,7 +26,7 @@ from igni_core.backend.schemas_run import (
     PromptBuildResult,
 )
 from igni_core.core.db.locator import StorageLocator
-from igni_core.core.utils.attached_pdf_text import AttachedPdfText
+from igni_core.core.documents.attached import AttachedDocumentText
 from igni_core.core.utils.attachment_store import AttachmentReferences, Attachments
 from igni_core.core.utils.media import MediaResolver
 from igni_core.core.utils.media_schemas import MediaAttachments
@@ -66,7 +66,7 @@ class PromptBuilder:
 
     1. ``@file`` mentions → substitute + announce.
     2. Bare filename references → resolve; on vision-capable models
-       attach as media. Every attached PDF's text goes in the
+       attach as media. Every attached document's text goes in the
        ``<attached-files>`` block, for every model.
     3. URL media (images in the text) → attach on vision models.
     4. Inject learnings (fire-and-forget onto the team's
@@ -99,7 +99,7 @@ class PromptBuilder:
         file_step = self._attach_file_references(text, media, model_cfg)
         text, media = file_step.text, file_step.media
         info.extend(file_step.info_messages)
-        text = self._attach_pdf_text(text)
+        text = self._attach_document_text(text)
         url_step = self._attach_url_media(text, media, model_cfg)
         media = url_step.media
         info.extend(url_step.info_messages)
@@ -180,10 +180,10 @@ class PromptBuilder:
             info_messages=[msg.Info(text=f"Resolved: {', '.join(resolved_files)}")],
         )
 
-    def _attach_pdf_text(self, text: str) -> str:
-        """The text of every PDF the message may attach, for every model, in ``<attached-files>``."""
+    def _attach_document_text(self, text: str) -> str:
+        """The text of every document the message may attach, for every model, in ``<attached-files>``."""
         attachable = self._resolver.resolve_text_references(text).attachable
-        return AttachedPdfText.collect(attachable).wrap(text)
+        return AttachedDocumentText.collect(attachable).wrap(text)
 
     def _attach_url_media(
         self,

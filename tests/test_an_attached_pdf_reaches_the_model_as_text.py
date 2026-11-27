@@ -16,9 +16,9 @@ from igni_core.backend.prompt_builder import PromptBuilder
 from igni_core.core.config.model_entry import ModelRegistryEntry
 from igni_core.core.config.schemas.models import ModelsConfig
 from igni_core.core.config.settings import Settings
+from igni_core.core.documents.reader import DocumentReader
 from igni_core.core.session.reminders import PendingReminderQueue
 from igni_core.core.session.session_run import SessionRun
-from igni_core.core.utils.pdf_text import PdfText
 
 CV = [
     ["DMYTRO EXAMPLE", "Principal Software Engineer", "Amsterdam, Netherlands"],
@@ -144,7 +144,7 @@ async def test_a_pdf_without_a_text_layer_says_so(tmp_path):
 
 
 async def test_a_long_pdf_is_cut_and_says_where(tmp_path, monkeypatch):
-    monkeypatch.setattr(PdfText, "MAX_CHARS", 20)
+    monkeypatch.setattr(DocumentReader, "MAX_CHARS", 20)
     long = _upload(tmp_path, "long.pdf", [["a" * 15], ["b" * 15], ["c" * 15]])
 
     block = _block(await _message(tmp_path, f"@{long} summarise"))
