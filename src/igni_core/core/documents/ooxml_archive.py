@@ -28,3 +28,12 @@ class OoxmlArchive:
         with zipfile.ZipFile(path) as archive:
             if sum(info.file_size for info in archive.infolist()) > max_unzipped:
                 raise DocumentRefused(DocumentNotes.too_large(str(path)))
+
+    @staticmethod
+    def member(archive: zipfile.ZipFile, name: str, path: Path, limit: int) -> bytes:
+        """The member's bytes, never more than ``limit`` whatever its header claims; ``KeyError`` when absent."""
+        with archive.open(name) as handle:
+            data = handle.read(limit + 1)
+        if len(data) > limit:
+            raise DocumentRefused(DocumentNotes.too_large(str(path)))
+        return data

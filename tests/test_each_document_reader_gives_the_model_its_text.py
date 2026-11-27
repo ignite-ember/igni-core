@@ -151,13 +151,16 @@ def test_a_password_protected_office_file_says_so(tmp_path, name):
 
 @pytest.mark.parametrize(
     ("name", "suffix", "modern"),
-    [("old.xls", ".xls", ".xlsx"), ("old.doc", ".doc", ".docx"), ("OLD.PPT", ".ppt", ".pptx")],
+    [("old.doc", ".doc", ".docx"), ("OLD.PPT", ".ppt", ".pptx")],
 )
 def test_a_legacy_office_file_is_named_not_read(tmp_path, name, suffix, modern):
     path = DocumentFixtures.legacy(tmp_path / name)
 
     assert _block(path) == (
-        f"[Could not read {path}: the legacy {suffix} format is not supported. Save it as {modern}.]"
+        f"[Could not read {path}: the legacy {suffix} format is not supported. Save it as {modern}. "
+        "To read it as it is, propose to the user writing a small reader for its format, with "
+        "whatever it needs installed outside igni (in a project virtual environment, for "
+        "example). Ask first, and install nothing until the user agrees.]"
     )
 
 

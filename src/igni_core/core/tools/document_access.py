@@ -24,8 +24,10 @@ class DocumentAccess:
     )
     """igni's settings and key stores, in a project's or the home config directory, backups included."""
 
-    def __init__(self, project_dir: Path) -> None:
+    def __init__(self, project_dir: Path, bundles: frozenset[str] = frozenset()) -> None:
         self._project_dir = project_dir.expanduser().resolve()
+        self._bundles = bundles
+        """Extensions a folder may carry and still be read: Apple's document packages."""
 
     def check(self, raw: str) -> Path:
         """The file ``raw`` names, resolved; raises :class:`DocumentRefused` when it may not be read."""
@@ -37,7 +39,7 @@ class DocumentAccess:
             raise DocumentRefused(DocumentNotes.protected(str(resolved)))
         if not resolved.is_relative_to(self._project_dir):
             raise DocumentRefused(DocumentNotes.outside_project(str(resolved)))
-        if resolved.is_dir():
+        if resolved.is_dir() and resolved.suffix.lower() not in self._bundles:
             raise DocumentRefused(DocumentNotes.directory(str(resolved)))
         if not resolved.exists():
             raise DocumentRefused(DocumentNotes.missing(str(resolved)))

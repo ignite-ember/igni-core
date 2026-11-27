@@ -1,4 +1,4 @@
-"""ReadDocumentTools — the model reads a PDF, Word, Excel, PowerPoint, CSV or TSV file as text."""
+"""ReadDocumentTools — the model reads a PDF, Office, OpenDocument, RTF, EPUB, email, notebook, CSV or TSV file as text."""
 
 from __future__ import annotations
 
@@ -42,20 +42,20 @@ class ReadDocumentTools(Toolkit):
                         func.requires_confirmation = True
 
     async def read_document(self, path: str, part: str = "") -> str:
-        """Read a document that is not plain text: PDF, Word (.docx), Excel (.xlsx, .xlsm) or PowerPoint (.pptx). CSV and TSV files are read too, as a table.
+        """Read a document that is not plain text: PDF, Word (.docx), Excel (.xlsx, .xlsm, .xls), PowerPoint (.pptx), OpenDocument (.odt, .ods, .odp), RTF, EPUB, a saved email (.eml), a Jupyter notebook (.ipynb), or an Apple Numbers, Pages or Keynote file (through its preview). CSV and TSV files are read too, as a table.
 
         Plain-text and code files are not for this tool: read them with the shell, as before. A long document is cut, and the cut says which part to ask for next.
 
         Args:
             path: The document's path, absolute or relative to the project. Only files inside the project are read.
-            part: Which part to read, as a range: "21-40", "21-" (to the end) or "21". It counts pages in a PDF, slides in a deck, sheets in a workbook, rows in a CSV or TSV, and paragraphs in a Word document. For rows of one sheet, write the sheet's name first: "Sales!501-". Leave it empty to read from the start.
+            part: Which part to read, as a range: "21-40", "21-" (to the end) or "21". It counts pages in a PDF (or an Apple file's preview), slides in a deck, sheets in a workbook, rows in a CSV or TSV, chapters in an EPUB, cells in a notebook, and paragraphs in a Word, OpenDocument or RTF document or an email's body. For rows of one sheet, write the sheet's name first: "Sales!501-". Leave it empty to read from the start.
         """
         return await asyncio.to_thread(self._read, path, part)
 
     def _read(self, raw: str, part: str) -> str:
         """The document's text block, or the note that stands in for it."""
         try:
-            target = DocumentAccess(self.base_dir).check(raw)
+            target = DocumentAccess(self.base_dir, self._readers.bundle_extensions).check(raw)
             window = ReadWindow.parse(part, str(target))
             document = self._readers.read(target, window)
             if document is None:
