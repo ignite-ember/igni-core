@@ -1,16 +1,4 @@
-"""A reasoning model's thinking reaches the app as it streams.
-
-MiniMax-M3.1 streams its reasoning in each delta's ``reasoning_content``
-field (seen on the live endpoint), not inline as ``<think>`` tags the way
-MiniMax-M2.7 does. Agno hands that to igni on ``RunContentEvent.reasoning_content``
-with no visible content, and the serializer read only ``.content``: every
-thinking delta was dropped, so the app showed no thinking while the stored
-run carried all of it.
-
-The end-to-end test streams M3.1's shape from a local OpenAI-compatible
-server through the model igni builds and an Agno agent, and serializes
-each event as the backend does.
-"""
+"""A reasoning model's native reasoning reaches the app as thinking while it streams."""
 
 from __future__ import annotations
 

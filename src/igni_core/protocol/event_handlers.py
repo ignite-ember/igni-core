@@ -137,14 +137,7 @@ class ReasoningContentHandler(EventHandler):
 
 
 class ContentHandler(EventHandler):
-    """Streamed visible-content delta, or the model's own reasoning delta.
-
-    Agno puts a provider's native reasoning (``reasoning_content`` /
-    ``reasoning`` in an OpenAI-compatible delta, a Claude thinking block)
-    on ``RunContentEvent.reasoning_content``, with no visible content in
-    the same event. ``ReasoningContentDeltaEvent`` is only the reasoning
-    agent's, so this is where a reasoning model's thinking arrives.
-    """
+    """Streamed visible-content delta, or the native reasoning delta Agno puts on a content event."""
 
     event_types = CONTENT_EVENTS
 
