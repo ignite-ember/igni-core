@@ -1,12 +1,4 @@
-"""The text of the PDFs a message attaches, put in its ``<attached-files>`` block.
-
-A model reads a PDF's bytes only when its provider takes PDFs, and an
-OpenAI-compatible endpoint that does not ignores the file part. Told only
-"read before responding", an agent wrote its own PDF stream decoder over
-fifteen shell calls and then pip-installed pypdf. The text is extracted
-here instead, page by page, and quarantined as untrusted content: a
-document is attacker-influenceable text, like a tool's output.
-"""
+"""The text of the PDFs a message attaches, quarantined in its ``<attached-files>`` block."""
 
 from __future__ import annotations
 
@@ -26,12 +18,11 @@ class AttachedPdfText(BaseModel):
 
     _OPEN: ClassVar[str] = "<attached-files>\n"
     _CLOSE: ClassVar[str] = "\n</attached-files>"
-    #: The ``<`` opening one of igni's wrapper tags; inside a document it
-    #: could close the block early, so it is written ``&lt;``.
     _WRAPPER_TAG: ClassVar[re.Pattern[str]] = re.compile(
         r"<(?=\s*/?\s*(?:system-context|attached-files|extension-message|loop-iteration)\b)",
         re.IGNORECASE,
     )
+    """The ``<`` opening one of igni's wrapper tags, written ``&lt;`` inside a document."""
 
     pdfs: list[PdfText] = Field(default_factory=list)
 

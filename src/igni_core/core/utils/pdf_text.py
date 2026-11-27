@@ -15,8 +15,8 @@ logger = logging.getLogger(__name__)
 class PdfText(BaseModel):
     """One PDF's extracted text, cut at :attr:`MAX_CHARS`."""
 
-    #: About 25k tokens; a longer document is cut, and says so.
     MAX_CHARS: ClassVar[int] = 100_000
+    """About 25k tokens; a longer document is cut, and says so."""
 
     path: str
     page_count: int = 0

@@ -181,12 +181,7 @@ class PromptBuilder:
         )
 
     def _attach_pdf_text(self, text: str) -> str:
-        """The text of every PDF the message may attach, in its ``<attached-files>`` block.
-
-        For every model: a provider that takes no PDFs drops the file part
-        a vision model is sent. The same files as the vision media — a path
-        written out in full only from an allowed root.
-        """
+        """The text of every PDF the message may attach, for every model, in ``<attached-files>``."""
         attachable = self._resolver.resolve_text_references(text).attachable
         return AttachedPdfText.collect(attachable).wrap(text)
 

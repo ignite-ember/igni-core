@@ -1,16 +1,4 @@
-"""A PDF the person attaches reaches the model as its text, page by page.
-
-Seen in a real session: a CV attached to MiniMax-M3.1 (``vision: true``)
-went out as an OpenAI ``file`` part, which that endpoint ignores, and the
-message said only "read before responding". With no PDF reader on the
-machine the agent hand-wrote a PDF stream decoder over fifteen shell
-calls, then pip-installed pypdf into /tmp.
-
-Now every attached PDF's text is in the message's ``<attached-files>``
-block, for every model, quarantined as untrusted content. These run the
-backend's real ``PromptBuilder`` and the shared turn pipeline of
-``igni -m`` over PDFs written for the test.
-"""
+"""A PDF the person attaches reaches the model as its text, page by page."""
 
 from __future__ import annotations
 
