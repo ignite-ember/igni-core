@@ -15,8 +15,9 @@ igni leverages Agno's toolkit system to give agents capabilities. Each agent get
 > `Unknown tool: 'Read'` when the agent is built. This is a deliberate
 > divergence from Claude Code's tool catalog; see `CLAUDE_CODE_PARITY.md`
 > row 22. `ReadDocument` is not a general read tool: it reads only the
-> document formats `cat` cannot show (PDF, Word, Excel, PowerPoint, and
-> CSV/TSV as a table), and sends a plain-text file back to the shell.
+> document formats `cat` cannot show well (PDF, Office, OpenDocument, RTF,
+> EPUB, email, notebooks, Apple iWork previews, and CSV/TSV as a table), and
+> sends a plain-text file back to the shell.
 
 The actual tool list registered on the main team at session boot:
 
@@ -27,7 +28,7 @@ The actual tool list registered on the main team at session boot:
 | `Edit` | `IgniEditTools` (custom) | Targeted string-replacement editing. Kept dedicated because `sed` is fragile. |
 | `Schedule` | `ScheduleTools` (custom) | Schedule tasks for later or recurring execution. |
 | `NotebookEdit` | `NotebookTools` (custom) | Read and edit Jupyter notebook cells. |
-| `ReadDocument` | `ReadDocumentTools` (custom) | Read a PDF, Word, Excel, PowerPoint, CSV or TSV file inside the project as text. |
+| `ReadDocument` | `ReadDocumentTools` (custom) | Read a PDF, Office, OpenDocument, RTF, EPUB, email, notebook, iWork, CSV or TSV file inside the project as text. |
 | `WebSearch` | `DuckDuckGoTools` | Web search (when `permissions.web_search != "deny"`). Comes with igni-core: its `agno[ddg]` dependency brings the `ddgs` package the toolkit uses. |
 | `WebFetch` | `WebTools` (custom) | Fetch and extract URL content (when `permissions.web_fetch != "deny"`). |
 | `Orchestrate` | `OrchestrateTools` (custom) | Spawn sub-teams from the agent pool. |
@@ -162,17 +163,35 @@ ReadDocumentTools(base_dir="/path/to/project")
 
 - `path` — absolute, `~`-relative or relative to the project.
 - `part` — optional range: `"21-40"`, `"21-"` or `"21"`. It counts PDF
-  pages, PowerPoint slides, workbook sheets, CSV/TSV rows and Word
-  paragraphs (a table counts as one). `"Sales!501-"` reads rows of one
-  sheet.
+  pages (an iWork preview's too), slides, workbook sheets, CSV/TSV rows,
+  EPUB chapters, notebook cells, and the paragraphs of a Word, OpenDocument
+  or RTF document or an email's body (a table counts as one).
+  `"Sales!501-"` reads rows of one sheet of any workbook.
 
 | Format | Extensions | Text | Cap |
 |---|---|---|---|
 | PDF | `.pdf` | each page under `--- Page n ---` | 100,000 characters |
-| Excel | `.xlsx`, `.xlsm` | each sheet as a Markdown table under `--- Sheet: name ---` | 20 sheets, 500 rows a sheet |
+| Excel | `.xlsx`, `.xlsm`, `.xls` | each sheet as a Markdown table under `--- Sheet: name ---` | 20 sheets, 500 rows a sheet |
 | Word | `.docx` | headings as `#` lines, paragraphs, tables as Markdown | 100,000 characters |
 | PowerPoint | `.pptx` | each slide under `--- Slide n ---`, with tables and speaker notes | 100 slides |
+| OpenDocument text | `.odt` | as Word: `#` headings, paragraphs, lists, tables; footnotes and comments left out | 100,000 characters |
+| OpenDocument spreadsheet | `.ods` | as Excel; repeated rows copied up to 2,000,000 cells, columns up to 16,384 | 20 sheets, 500 rows a sheet |
+| OpenDocument presentation | `.odp` | as PowerPoint | 100 slides |
+| RTF | `.rtf` | one paragraph a line; pictures, objects and field codes dropped | 20 MB file |
+| EPUB | `.epub` | each spine chapter under `--- Chapter n ---`, headings and tables kept; scripts, styles and DRM-encrypted chapters dropped | 100,000 characters |
+| Email | `.eml` | From/To/Cc/Date/Subject, `Attachments:` by name, type and size (never decoded), then the text body (an HTML-only body as text) | 50 MB file, 100 attachments listed, 4,000 characters a header |
+| Jupyter | `.ipynb` | each cell under `--- Cell n (kind) ---`, text outputs under `Output:`; images and HTML left out with a note | 100,000 characters |
+| Apple iWork | `.numbers`, `.pages`, `.key` (file or folder bundle) | the preview PDF inside (`QuickLook/Preview.pdf` or `preview.pdf`), with a note that it is a preview; without one, a note to export | as PDF |
 | CSV / TSV | `.csv`, `.tsv` | one Markdown table | 500 rows |
+
+The OpenDocument, EPUB and iWork readers open the zip behind the same guard
+as Office files (300 MB unpacked, checked before anything unpacks) and read
+no XML part over 64 MB, whatever its zip header claims. XML is parsed with
+lxml with entity resolution, DTD loading and network access off, so an
+external entity or a billion-laughs file is never expanded. Macros and
+embedded objects are never opened or run. An email's attachments are listed
+from their headers and encoded length; they are never decoded, in memory or
+on disk.
 
 Every format also stops at 100,000 characters and after 15 seconds. A cut
 ends with the attachment's note plus the part to read next, for example
@@ -181,12 +200,22 @@ ends with the attachment's note plus the part to read next, for example
 The text sits inside the untrusted-output block, below a
 `[Text extracted from <path> (<count>):]` line, exactly as an attached
 document's does. Every refusal is a one-line note: plain text, a binary
-format no reader claims, a legacy `.xls`/`.doc`/`.ppt`, password-protected,
-too large, no text layer, a missing file, a directory, a `part` that is not
-a range or starts past the end, and a sheet the workbook lacks.
+format no reader claims, a legacy `.doc`/`.ppt`, an iWork file with no
+preview, password-protected (Office, OpenDocument, `.xls`), too large, no
+text layer, a missing file, a directory, a `part` that is not a range or
+starts past the end, and a sheet the workbook lacks.
+
+Formats outside igni-core stay outside it. For a binary format no reader
+claims, and for `.doc`/`.ppt` (which need programs igni does not ship), the
+note tells the model to propose writing a small reader for the format, with
+its dependencies installed outside igni (a project virtual environment, for
+example), and to ask the user first and install nothing until they agree.
 
 **Access.** Only files inside the project (`base_dir`, which a worktree
 spawn moves to its worktree) are read; links are followed before the check.
+A folder is refused unless it is an iWork bundle (`.numbers`, `.pages`,
+`.key`), and a bundle's preview is read only if it stays inside the bundle
+once links are followed.
 Private keys, credential stores and igni's own settings (`config.yaml*`,
 `config.yml*`, `settings*.json`, `credentials.json*` in a `.igni` or
 `.ember` folder) are refused wherever they are. In the default mode it asks,
@@ -531,7 +560,7 @@ Each built-in agent's tools are declared in the `tools:` frontmatter of its
 
 Every one of them reaches files through `Bash` — none names a read, grep,
 glob or list toolkit, because none exists. Each one with `Bash` also has
-`ReadDocument`, for the PDF and Office files `cat` cannot show. `visualizer` is the only one
+`ReadDocument`, for the document files `cat` cannot show. `visualizer` is the only one
 holding `Visualize`. (CodeIndex's `data-architect` reaches its tool through
 the extension's MCP server — `mcp_servers: [ext:igni.codeindex]`.)
 
