@@ -135,11 +135,12 @@ class SessionRun(ABC):
             [*named, *resolved_files, *resolution.attachable],
             attachments.local_paths if attachments is not None else [],
             session.project_dir,
+            vision=vision,
         )
         message = notices.wrap(message)
-        session.media_guard.begin_turn(notices.unseen.files)
-        if notices.unseen.files and not vision:
-            display.print_info(notices.unseen.user_notice(models.default))
+        session.media_guard.begin_turn(notices.guarded())
+        for line in notices.user_notices(models.default):
+            display.print_info(line)
 
         media: MessageMedia | None = None
         if attachments is not None:

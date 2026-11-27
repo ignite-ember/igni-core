@@ -10,7 +10,8 @@ model was sent, the line the person was shown, and the session's guard.
 A vision model is told the media files it was sent are attached and
 visible, never to read them. A media file it was not sent — outside the
 allowed roots, or one the resolver attached nothing for — is described
-by its metadata, as for a text-only model.
+by its metadata under a header saying it could not be attached, never
+that vision is disabled.
 """
 
 from __future__ import annotations
@@ -48,6 +49,11 @@ ATTACHED = (
     "[These media files are attached to this message and already visible to you. "
     "Do not open, read, decode, OCR or otherwise extract their content with tools.]"
 )
+UNATTACHED = (
+    "[These media files could not be attached, so you cannot see them. Do not open, read, "
+    "decode, OCR or otherwise extract their content; only their metadata is available. "
+    "Tell the user they were not attached.]"
+)
 REFUSAL = "Not run: vision is disabled for this model; only the metadata below is available."
 
 
@@ -83,6 +89,14 @@ def _vision_block(shot: str, clip: str) -> str:
         "</attached-files>\n"
         f"compare @{shot} @{clip} @notes.md"
     )
+
+
+_UNATTACHED_LINE = "{names} could not be attached, so only their metadata was sent."
+
+
+def _flat(out: str) -> str:
+    """Printed output with the console's line wrapping undone."""
+    return out.replace("\n", " ").replace("  ", " ")
 
 
 def _notice(model: str) -> str:
@@ -389,18 +403,20 @@ def test_a_media_file_a_vision_model_was_not_sent_is_described_by_its_metadata(
     sent = send(cli_session, f"compare @shot.png @{far}")
 
     assert sent == (
-        f"<attached-files>\n{ATTACHED}\n{_line(shot)}\n{HEADER}\n{_line(far)}\n"
+        f"<attached-files>\n{ATTACHED}\n{_line(shot)}\n{UNATTACHED}\n{_line(far)}\n"
         f"</attached-files>\ncompare @{shot} @{far}"
     )
+    assert "Vision is disabled" not in sent
     assert _image_names(cli_session.seen["media"]) == ["shot.png"]
     assert [f.path for f in cli_session.media_guard.files] == [far]
-    assert "Vision is disabled" not in capsys.readouterr().out
-    assert not any(i.startswith("Vision is disabled") for i in cli_session.seen.get("info", []))
+    shown = [*cli_session.seen.get("info", []), _flat(capsys.readouterr().out)]
+    assert not any("Vision is disabled" in line for line in shown)
+    assert any(_UNATTACHED_LINE.format(names="far.png") in line for line in shown)
 
 
 @pytest.mark.parametrize("send", EVERY_ENTRY_POINT)
-def test_a_vision_model_falls_back_to_the_metadata_when_nothing_was_attached(
-    cli_session, monkeypatch, send
+def test_a_vision_model_is_told_nothing_was_attached_when_the_resolver_attached_nothing(
+    cli_session, capsys, monkeypatch, send
 ):
     _use_vision(cli_session, True)
     shot, clip = _files(cli_session.project_dir)
@@ -408,10 +424,13 @@ def test_a_vision_model_falls_back_to_the_metadata_when_nothing_was_attached(
 
     sent = send(cli_session, MESSAGE)
 
-    assert sent == _text_only_block(shot, clip)
-    assert ATTACHED not in sent
+    assert sent == _text_only_block(shot, clip).replace(HEADER, UNATTACHED)
+    assert ATTACHED not in sent and "Vision is disabled" not in sent
     assert cli_session.seen["media"] is None
     assert [f.path for f in cli_session.media_guard.files] == [shot, clip]
+    shown = [*cli_session.seen.get("info", []), _flat(capsys.readouterr().out)]
+    assert not any("Vision is disabled" in line for line in shown)
+    assert any(_UNATTACHED_LINE.format(names="shot.png, clip.mp4") in line for line in shown)
 
 
 @pytest.mark.parametrize("send", EVERY_ENTRY_POINT)

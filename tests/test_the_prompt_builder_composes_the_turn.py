@@ -154,7 +154,10 @@ async def test_a_vision_model_that_cannot_attach_the_file_is_told_it_was_resolve
     result = await builder.build("what is in shot.png", None, interrupted_summary=None)
 
     assert result.media is None
-    assert _texts(result) == [f"Resolved: {shot.resolve()}"]
+    assert _texts(result) == [
+        f"Resolved: {shot.resolve()}",
+        "shot.png could not be attached, so only their metadata was sent.",
+    ]
 
 
 async def test_several_resolved_files_are_listed_comma_joined(tmp_path: Path):

@@ -106,13 +106,15 @@ class PromptBuilder:
         info.extend(file_step.info_messages)
         named = [self._resolver.locate(p) or p for p in mentioned_files]
         notices = TurnMediaNotices.collect(
-            [*named, *file_step.paths], file_step.attached, self._session.project_dir
+            [*named, *file_step.paths],
+            file_step.attached,
+            self._session.project_dir,
+            vision=model_cfg.vision,
         )
         text = notices.wrap(text)
-        self._session.media_guard.begin_turn(notices.unseen.files)
-        if notices.unseen.files and not model_cfg.vision:
-            unseen = notices.unseen.user_notice(self._session.settings.models.default)
-            info.append(msg.Info(text=unseen))
+        self._session.media_guard.begin_turn(notices.guarded())
+        for line in notices.user_notices(self._session.settings.models.default):
+            info.append(msg.Info(text=line))
         url_step = self._attach_url_media(text, media, model_cfg)
         media = url_step.media
         info.extend(url_step.info_messages)

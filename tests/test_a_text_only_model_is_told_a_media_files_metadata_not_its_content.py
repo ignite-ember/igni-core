@@ -32,6 +32,7 @@ from igni_core.core.utils.media_schemas import (
 from igni_core.core.utils.mentions import process_file_mentions
 from igni_core.core.utils.text_only_media import TextOnlyMediaNotice
 from igni_core.core.utils.turn_media import TurnMediaNotices
+from igni_core.core.utils.unattached_media import UnattachedMediaNotice
 
 FIXTURES = Path(__file__).parent / "fixtures" / "media"
 PNG = FIXTURES / "seven-by-three.png"
@@ -508,28 +509,65 @@ ATTACHED = (
 )
 
 
-def test_a_vision_turn_lists_the_attached_png_and_describes_the_mp4_it_was_not_sent(
-    tmp_path: Path,
-):
+UNATTACHED = (
+    "[These media files could not be attached, so you cannot see them. Do not open, read, "
+    "decode, OCR or otherwise extract their content; only their metadata is available. "
+    "Tell the user they were not attached.]"
+)
+
+
+def _shot_and_clip(tmp_path: Path) -> tuple[str, str]:
+    """Write a PNG and an MP4; their paths."""
     _write(tmp_path / "shot.png", PNG.read_bytes())
     _write(tmp_path / "clip.mp4", b"\x00" * 6)
-    shot, clip = str(tmp_path / "shot.png"), str(tmp_path / "clip.mp4")
+    return str(tmp_path / "shot.png"), str(tmp_path / "clip.mp4")
 
-    notices = TurnMediaNotices.collect(["shot.png", "notes.md", "clip.mp4"], [shot], tmp_path)
+
+def test_a_vision_turn_lists_the_attached_png_and_says_the_mp4_could_not_be_attached(
+    tmp_path: Path,
+):
+    shot, clip = _shot_and_clip(tmp_path)
+
+    notices = TurnMediaNotices.collect(
+        ["shot.png", "notes.md", "clip.mp4"], [shot], tmp_path, vision=True
+    )
 
     assert AttachedMediaNotice.HEADER == ATTACHED
+    assert UnattachedMediaNotice.HEADER == UNATTACHED
     assert notices.wrap(
         "<attached-files>\n[Referenced files: notes.md — read before responding]\n</attached-files>\nhi"
     ) == (
         "<attached-files>\n[Referenced files: notes.md — read before responding]\n"
         f"{ATTACHED}\n"
         f"- shot.png (path: {shot}, type: image/png, size: 74 bytes, dimensions: 7x3 px)\n"
-        f"{HEADER}\n"
+        f"{UNATTACHED}\n"
         f"- clip.mp4 (path: {clip}, type: video/mp4, size: 6 bytes)\n"
         "</attached-files>\nhi"
     )
-    assert [f.path for f in notices.unseen.files] == [clip]
+    assert notices.unseen.files == []
+    assert [f.path for f in notices.guarded()] == [clip]
+    assert notices.user_notices("vision-model") == [
+        "clip.mp4 could not be attached, so only their metadata was sent."
+    ]
+
+
+def test_a_text_only_turn_still_says_vision_is_disabled(tmp_path: Path):
+    shot, clip = _shot_and_clip(tmp_path)
+
+    notices = TurnMediaNotices.collect(["shot.png", "clip.mp4"], [], tmp_path, vision=False)
+
+    assert notices.unattached.files == []
+    assert notices.wrap("hi").startswith(f"<attached-files>\n{HEADER}\n- shot.png")
+    assert UNATTACHED not in notices.wrap("hi")
+    assert [f.path for f in notices.guarded()] == [shot, clip]
+    assert notices.user_notices("MiniMax-M2.7") == [
+        "Vision is disabled for MiniMax-M2.7: only the metadata of shot.png, clip.mp4 was sent. "
+        "Switch to a vision-enabled model to let it see the content."
+    ]
 
 
 def test_a_turn_with_no_media_leaves_the_message_alone(tmp_path: Path):
-    assert TurnMediaNotices.collect(["notes.md"], [], tmp_path).wrap("hi") == "hi"
+    notices = TurnMediaNotices.collect(["notes.md"], [], tmp_path, vision=True)
+
+    assert notices.wrap("hi") == "hi"
+    assert notices.user_notices("m") == []
