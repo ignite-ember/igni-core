@@ -138,7 +138,7 @@ class SessionRun(ABC):
             vision=vision,
         )
         message = notices.wrap(message)
-        session.media_guard.begin_turn(notices.guarded())
+        session.media_guard.begin_turn(notices.unseen.files, notices.unattached.files)
         for line in notices.user_notices(models.default):
             display.print_info(line)
 

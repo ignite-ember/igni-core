@@ -55,6 +55,9 @@ UNATTACHED = (
     "Tell the user they were not attached.]"
 )
 REFUSAL = "Not run: vision is disabled for this model; only the metadata below is available."
+UNATTACHED_REFUSAL = (
+    "Not run: this media file could not be attached; only the metadata below is available."
+)
 
 
 def _files(root: Path) -> tuple[str, str]:
@@ -431,6 +434,36 @@ def test_a_vision_model_is_told_nothing_was_attached_when_the_resolver_attached_
     shown = [*cli_session.seen.get("info", []), _flat(capsys.readouterr().out)]
     assert not any("Vision is disabled" in line for line in shown)
     assert any(_UNATTACHED_LINE.format(names="shot.png, clip.mp4") in line for line in shown)
+
+
+@pytest.mark.parametrize("send", EVERY_ENTRY_POINT)
+@pytest.mark.parametrize(
+    ("vision", "refusal"),
+    [
+        pytest.param(True, UNATTACHED_REFUSAL, id="vision"),
+        pytest.param(False, REFUSAL, id="text-only"),
+    ],
+)
+def test_a_refused_read_says_why_the_model_cannot_see_the_file(
+    cli_session, monkeypatch, send, vision, refusal
+):
+    """After a real turn, the session's own tool hook refuses ``cat`` with the reason that applies."""
+    _use_vision(cli_session, vision)
+    shot, _ = _files(cli_session.project_dir)
+    monkeypatch.setattr(MediaResolver, "attach_local_paths", lambda self, paths: None)
+    ran: list[str] = []
+
+    send(cli_session, MESSAGE)
+    result = asyncio.run(
+        cli_session.tool_hook_factory.create()(
+            name="run_shell_command",
+            func=lambda **_: ran.append("cat") or "PNG bytes",
+            args={"command": "cat shot.png"},
+        )
+    )
+
+    assert result == f"{refusal}\n{_line(shot)}"
+    assert ran == []
 
 
 @pytest.mark.parametrize("send", EVERY_ENTRY_POINT)

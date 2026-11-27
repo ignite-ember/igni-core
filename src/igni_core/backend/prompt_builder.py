@@ -112,7 +112,7 @@ class PromptBuilder:
             vision=model_cfg.vision,
         )
         text = notices.wrap(text)
-        self._session.media_guard.begin_turn(notices.guarded())
+        self._session.media_guard.begin_turn(notices.unseen.files, notices.unattached.files)
         for line in notices.user_notices(self._session.settings.models.default):
             info.append(msg.Info(text=line))
         url_step = self._attach_url_media(text, media, model_cfg)

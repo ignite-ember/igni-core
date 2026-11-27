@@ -1,4 +1,4 @@
-"""Keeps a text-only model from reading the content of the media files its turn names.
+"""Keeps a model from reading the content of the media files its turn names but it cannot see.
 
 Told that vision is disabled, a model may still try: ``cat`` on the PNG,
 ``base64`` of it, ``tesseract``. This guard refuses those calls with the
@@ -20,11 +20,15 @@ from igni_core.core.utils.media_schemas import MediaFileMetadata
 
 
 class TextOnlyMediaGuard:
-    """The media files of the turn a text-only model is running, and the calls that would read them."""
+    """The media files of a turn the model cannot see, and the calls that would read them."""
 
     #: The model-facing refusal, followed by the metadata lines.
     REFUSAL: ClassVar[str] = (
         "Not run: vision is disabled for this model; only the metadata below is available."
+    )
+    #: The refusal for a file a vision model could not be sent, followed by the metadata lines.
+    UNATTACHED_REFUSAL: ClassVar[str] = (
+        "Not run: this media file could not be attached; only the metadata below is available."
     )
     #: Tools that return a file's content, by the path they are given.
     READ_TOOLS: ClassVar[frozenset[str]] = frozenset({"read_file", "read_file_chunk"})
@@ -55,28 +59,43 @@ class TextOnlyMediaGuard:
     _SEPARATORS: ClassVar[frozenset[str]] = frozenset({"|", "||", "&&", ";", "&", "|&", "(", ")"})
 
     def __init__(self) -> None:
-        self._files: list[MediaFileMetadata] = []
+        self._unseen: list[MediaFileMetadata] = []
+        self._unattached: list[MediaFileMetadata] = []
 
     @property
     def files(self) -> list[MediaFileMetadata]:
-        """The media files the current turn named, for a text-only model."""
-        return list(self._files)
+        """The media files the current turn named that the model cannot see."""
+        return [*self._unseen, *self._unattached]
 
-    def begin_turn(self, files: Sequence[MediaFileMetadata]) -> None:
-        """Start a turn guarding ``files``; an empty list (a vision model) guards nothing."""
-        self._files = list(files)
+    def begin_turn(
+        self,
+        unseen: Sequence[MediaFileMetadata],
+        unattached: Sequence[MediaFileMetadata] = (),
+    ) -> None:
+        """Start a turn guarding a text-only model's ``unseen`` and a vision model's ``unattached`` files."""
+        self._unseen = list(unseen)
+        self._unattached = list(unattached)
 
     def refusal(self, tool_name: str, args: dict[str, Any]) -> str | None:
         """The refusal for a call that would read a guarded file's content, or ``None``."""
         if tool_name in self.READ_TOOLS:
-            matched = self._matching([self._read_path(args)])
+            operands = [self._read_path(args)]
         elif tool_name == self.SHELL_TOOL:
-            matched = self._matching(self._reader_operands(BashCommand.from_args(args).command))
+            operands = self._reader_operands(BashCommand.from_args(args).command)
         else:
             return None
-        if not matched:
-            return None
-        return "\n".join([self.REFUSAL, *(f.describe() for f in matched)])
+        lines = [
+            *self._refusal_lines(self.REFUSAL, self._matching(self._unseen, operands)),
+            *self._refusal_lines(
+                self.UNATTACHED_REFUSAL, self._matching(self._unattached, operands)
+            ),
+        ]
+        return "\n".join(lines) if lines else None
+
+    @staticmethod
+    def _refusal_lines(refusal: str, matched: Sequence[MediaFileMetadata]) -> list[str]:
+        """``refusal`` and the metadata line of each matched file, or nothing when none matched."""
+        return [refusal, *(f.describe() for f in matched)] if matched else []
 
     def _read_path(self, args: dict[str, Any]) -> str:
         """The path a read tool was given, or ``""``."""
@@ -86,10 +105,13 @@ class TextOnlyMediaGuard:
                 return value
         return ""
 
-    def _matching(self, operands: Sequence[str]) -> list[MediaFileMetadata]:
-        """The guarded files the operands name: same file name, so same media extension."""
+    @staticmethod
+    def _matching(
+        files: Sequence[MediaFileMetadata], operands: Sequence[str]
+    ) -> list[MediaFileMetadata]:
+        """The ``files`` the operands name: same file name, so same media extension."""
         names = {PurePath(op).name for op in operands if op}
-        return [f for f in self._files if f.name in names]
+        return [f for f in files if f.name in names]
 
     def _reader_operands(self, command: str) -> list[str]:
         """Every word of each command in ``command`` whose program is a reader."""

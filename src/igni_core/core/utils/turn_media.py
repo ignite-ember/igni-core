@@ -9,7 +9,6 @@ from pydantic import BaseModel, Field
 
 from igni_core.core.utils.attached_media import AttachedMediaNotice
 from igni_core.core.utils.media_metadata import MediaMetadataReader
-from igni_core.core.utils.media_schemas import MediaFileMetadata
 from igni_core.core.utils.text_only_media import TextOnlyMediaNotice
 from igni_core.core.utils.unattached_media import UnattachedMediaNotice
 
@@ -34,10 +33,6 @@ class TurnMediaNotices(BaseModel):
             unattached=UnattachedMediaNotice(files=missing if vision else []),
             unseen=TextOnlyMediaNotice(files=[] if vision else missing),
         )
-
-    def guarded(self) -> list[MediaFileMetadata]:
-        """The media files the model cannot see, whose content its tools are refused."""
-        return [*self.unattached.files, *self.unseen.files]
 
     def user_notices(self, model: str) -> list[str]:
         """The lines shown to the person about the media files ``model`` cannot see."""

@@ -545,7 +545,7 @@ def test_a_vision_turn_lists_the_attached_png_and_says_the_mp4_could_not_be_atta
         "</attached-files>\nhi"
     )
     assert notices.unseen.files == []
-    assert [f.path for f in notices.guarded()] == [clip]
+    assert [f.path for f in notices.unattached.files] == [clip]
     assert notices.user_notices("vision-model") == [
         "clip.mp4 could not be attached, so only their metadata was sent."
     ]
@@ -559,7 +559,7 @@ def test_a_text_only_turn_still_says_vision_is_disabled(tmp_path: Path):
     assert notices.unattached.files == []
     assert notices.wrap("hi").startswith(f"<attached-files>\n{HEADER}\n- shot.png")
     assert UNATTACHED not in notices.wrap("hi")
-    assert [f.path for f in notices.guarded()] == [shot, clip]
+    assert [f.path for f in notices.unseen.files] == [shot, clip]
     assert notices.user_notices("MiniMax-M2.7") == [
         "Vision is disabled for MiniMax-M2.7: only the metadata of shot.png, clip.mp4 was sent. "
         "Switch to a vision-enabled model to let it see the content."

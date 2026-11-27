@@ -32,6 +32,9 @@ from tests.session_factory import build_session
 
 PNG = (Path(__file__).parent / "fixtures" / "media" / "seven-by-three.png").read_bytes()
 REFUSAL = "Not run: vision is disabled for this model; only the metadata below is available."
+UNATTACHED_REFUSAL = (
+    "Not run: this media file could not be attached; only the metadata below is available."
+)
 
 
 @pytest.fixture
@@ -63,6 +66,43 @@ def _shell(command: str) -> dict[str, Any]:
 
 def test_the_refusal_is_worded_exactly_as_approved():
     assert TextOnlyMediaGuard.REFUSAL == REFUSAL
+
+
+def test_the_refusal_for_a_file_a_vision_model_was_not_sent_is_worded_exactly_as_approved():
+    assert TextOnlyMediaGuard.UNATTACHED_REFUSAL == UNATTACHED_REFUSAL
+
+
+@pytest.mark.parametrize(
+    ("tool", "args"),
+    [("run_shell_command", _shell("cat shot.png")), ("read_file", {"file_path": "shot.png"})],
+)
+def test_a_vision_models_unattached_file_is_refused_as_not_attached(shot, clip, tool, args):
+    guard = TextOnlyMediaGuard()
+    guard.begin_turn([], [shot, clip])
+
+    refusal = guard.refusal(tool, args)
+
+    assert refusal == f"{UNATTACHED_REFUSAL}\n{shot.describe()}"
+    assert guard.files == [shot, clip]
+
+
+def test_each_file_is_refused_for_why_the_model_cannot_see_it(shot, clip):
+    guard = TextOnlyMediaGuard()
+    guard.begin_turn([shot], [clip])
+
+    refusal = guard.refusal("run_shell_command", _shell("cat clip.mp4 shot.png"))
+
+    assert refusal == (f"{REFUSAL}\n{shot.describe()}\n{UNATTACHED_REFUSAL}\n{clip.describe()}")
+
+
+def test_the_next_turn_drops_the_unattached_files(shot, clip):
+    guard = TextOnlyMediaGuard()
+    guard.begin_turn([shot], [clip])
+
+    guard.begin_turn([])
+
+    assert guard.files == []
+    assert guard.refusal("run_shell_command", _shell("cat clip.mp4")) is None
 
 
 def test_cat_on_the_image_is_refused_with_its_metadata(guard, shot):
@@ -334,6 +374,22 @@ async def test_a_sessions_tool_hook_uses_the_sessions_guard(tmp_path: Path):
     )
 
     assert result == f"{REFUSAL}\n{metadata.describe()}"
+    assert tool.calls == 0
+
+
+async def test_a_sessions_tool_hook_refuses_an_unattached_file_as_not_attached(tmp_path: Path):
+    session = build_session(tmp_path)
+    (session.project_dir / "shot.png").write_bytes(PNG)
+    metadata = MediaMetadataReader(session.project_dir).read("shot.png")
+    assert metadata is not None
+
+    session.media_guard.begin_turn([], [metadata])
+    tool = _Ran()
+    result = await session.tool_hook_factory.create()(
+        name="run_shell_command", func=tool, args=_shell("cat shot.png")
+    )
+
+    assert result == f"{UNATTACHED_REFUSAL}\n{metadata.describe()}"
     assert tool.calls == 0
 
 
