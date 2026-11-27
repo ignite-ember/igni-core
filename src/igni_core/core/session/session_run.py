@@ -16,10 +16,10 @@ to duplicate:
   typed calls in ``interactive_loop.py``).
 * :meth:`_run_turn` — the ``@`` mention + :class:`MediaResolver` +
   ``session.handle_message`` + :class:`RunStats` pipeline that was
-  byte-for-byte duplicated between the two coordinators. A text-only
-  model is told the metadata of the media files a turn names, not to
-  read them (:class:`TextOnlyMediaNotice`), and the session's media
-  guard refuses its reads of them.
+  byte-for-byte duplicated between the two coordinators. A vision model
+  is told which media files it was sent as content; a media file it was
+  not sent is described by its metadata (:class:`TurnMediaNotices`), and
+  the session's media guard refuses reads of it.
 
 Concrete subclasses define their own ``run(...)`` entry point shape
 (``run()`` for the REPL, ``run(message)`` for the single-shot case).
@@ -37,8 +37,9 @@ from igni_core.core.session.core import Session
 from igni_core.core.session.schemas import MessageMedia, SessionLifecyclePayload
 from igni_core.core.utils.display_schemas import RunStats
 from igni_core.core.utils.media import MediaResolver
+from igni_core.core.utils.media_schemas import MediaAttachments
 from igni_core.core.utils.mentions import process_file_mentions
-from igni_core.core.utils.text_only_media import TextOnlyMediaNotice
+from igni_core.core.utils.turn_media import TurnMediaNotices
 
 
 class SessionRun(ABC):
@@ -118,7 +119,7 @@ class SessionRun(ABC):
         models = session.settings.models
         vision = models.has_vision(models.default)
 
-        message, mentioned_files = process_file_mentions(text, vision=vision)
+        message, mentioned_files = process_file_mentions(text)
         if mentioned_files:
             display.print_info(f"Referenced: {', '.join(mentioned_files)}")
 
@@ -128,19 +129,27 @@ class SessionRun(ABC):
         if resolved_files:
             display.print_info(f"Resolved: {', '.join(resolved_files)}")
 
-        notice = TextOnlyMediaNotice()
-        if not vision:
-            notice = TextOnlyMediaNotice.collect(
-                [*mentioned_files, *resolved_files, *resolution.attachable], session.project_dir
-            )
-            message = notice.wrap(message)
-        session.media_guard.begin_turn(notice.files)
-        if notice.files:
-            display.print_info(notice.user_notice(models.default))
+        attachments = self._vision_media(resolver, resolution.attachable)
+        named = [resolver.locate(p) or p for p in mentioned_files]
+        notices = TurnMediaNotices.collect(
+            [*named, *resolved_files, *resolution.attachable],
+            attachments.local_paths if attachments is not None else [],
+            session.project_dir,
+        )
+        message = notices.wrap(message)
+        session.media_guard.begin_turn(notices.unseen.files)
+        if notices.unseen.files and not vision:
+            display.print_info(notices.unseen.user_notice(models.default))
 
-        media = self._vision_media(resolver, resolution.attachable)
-        if media is not None:
+        media: MessageMedia | None = None
+        if attachments is not None:
             display.print_info(f"Attached: {len(resolution.attachable)} file(s)")
+            media = MessageMedia(
+                images=attachments.images or None,
+                audio=attachments.audio or None,
+                videos=attachments.videos or None,
+                files=attachments.files or None,
+            )
 
         context, self._start_context = self._start_context, ""
         # Asked with ``context`` and ``media`` only when there are any: a
@@ -193,7 +202,7 @@ class SessionRun(ABC):
         )
         return True
 
-    def _vision_media(self, resolver: MediaResolver, paths: list[str]) -> MessageMedia | None:
+    def _vision_media(self, resolver: MediaResolver, paths: list[str]) -> MediaAttachments | None:
         """The images and files the message names, for a ``vision: true`` model.
 
         QUICKSTART's File References: a vision model gets them as
@@ -204,15 +213,7 @@ class SessionRun(ABC):
         models = self._session.settings.models
         if not paths or not models.has_vision(models.default):
             return None
-        attachments = resolver.attach_local_paths(paths)
-        if attachments is None:
-            return None
-        return MessageMedia(
-            images=attachments.images or None,
-            audio=attachments.audio or None,
-            videos=attachments.videos or None,
-            files=attachments.files or None,
-        )
+        return resolver.attach_local_paths(paths)
 
     # ── Entry point (subclass-defined shape) ─────────────────────
 

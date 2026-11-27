@@ -19,6 +19,7 @@ from pathlib import Path
 
 import pytest
 
+from igni_core.core.utils.attached_media import AttachedMediaNotice
 from igni_core.core.utils.image_dimensions import ImageDimensions
 from igni_core.core.utils.media_metadata import MediaMetadataReader
 from igni_core.core.utils.media_schemas import (
@@ -30,6 +31,7 @@ from igni_core.core.utils.media_schemas import (
 )
 from igni_core.core.utils.mentions import process_file_mentions
 from igni_core.core.utils.text_only_media import TextOnlyMediaNotice
+from igni_core.core.utils.turn_media import TurnMediaNotices
 
 FIXTURES = Path(__file__).parent / "fixtures" / "media"
 PNG = FIXTURES / "seven-by-three.png"
@@ -349,23 +351,8 @@ def test_each_file_is_described_once_in_the_order_first_named(tmp_path: Path):
 # ── the mention line ──────────────────────────────────────────────
 
 
-def test_a_vision_model_is_told_to_read_every_mentioned_file():
-    text, paths = process_file_mentions("compare @notes.md @shot.png @clip.mp4", vision=True)
-
-    assert paths == ["notes.md", "shot.png", "clip.mp4"]
-    assert text == (
-        "<attached-files>\n"
-        "[Referenced files: notes.md, shot.png, clip.mp4 — read before responding]\n"
-        "</attached-files>\ncompare @notes.md @shot.png @clip.mp4"
-    )
-
-
-def test_vision_is_assumed_unless_the_caller_says_otherwise():
-    assert process_file_mentions("@shot.png") == process_file_mentions("@shot.png", vision=True)
-
-
-def test_a_text_only_model_is_told_to_read_only_the_files_that_are_not_media():
-    text, paths = process_file_mentions("compare @notes.md @shot.png @clip.mp4", vision=False)
+def test_only_the_files_that_are_not_media_are_listed_to_read():
+    text, paths = process_file_mentions("compare @notes.md @shot.png @clip.mp4")
 
     assert paths == ["notes.md", "shot.png", "clip.mp4"], "every mention is still announced"
     assert text == (
@@ -375,16 +362,15 @@ def test_a_text_only_model_is_told_to_read_only_the_files_that_are_not_media():
     )
 
 
-def test_a_text_only_model_is_not_told_to_read_a_message_of_media_alone():
-    text, paths = process_file_mentions("what is @shot.png", vision=False)
+def test_a_message_of_media_alone_is_not_told_to_read_anything():
+    text, paths = process_file_mentions("what is @shot.png")
 
     assert paths == ["shot.png"]
     assert text == "what is @shot.png"
 
 
-@pytest.mark.parametrize("vision", [True, False])
-def test_files_that_are_not_media_are_listed_the_same_for_either_model(vision: bool):
-    text, _ = process_file_mentions("read @notes.md and @report.pdf", vision=vision)
+def test_files_that_are_not_media_are_listed_as_before():
+    text, _ = process_file_mentions("read @notes.md and @report.pdf")
 
     assert text == (
         "<attached-files>\n"
@@ -511,3 +497,39 @@ def test_only_an_image_is_given_pixels_whatever_its_bytes(tmp_path: Path):
     metadata = MediaMetadataReader(tmp_path).read("odd.mp4")
 
     assert metadata is not None and metadata.pixels is None
+
+
+# ── a vision turn: attached, or described when not ────────────────
+
+
+ATTACHED = (
+    "[These media files are attached to this message and already visible to you. "
+    "Do not open, read, decode, OCR or otherwise extract their content with tools.]"
+)
+
+
+def test_a_vision_turn_lists_the_attached_png_and_describes_the_mp4_it_was_not_sent(
+    tmp_path: Path,
+):
+    _write(tmp_path / "shot.png", PNG.read_bytes())
+    _write(tmp_path / "clip.mp4", b"\x00" * 6)
+    shot, clip = str(tmp_path / "shot.png"), str(tmp_path / "clip.mp4")
+
+    notices = TurnMediaNotices.collect(["shot.png", "notes.md", "clip.mp4"], [shot], tmp_path)
+
+    assert AttachedMediaNotice.HEADER == ATTACHED
+    assert notices.wrap(
+        "<attached-files>\n[Referenced files: notes.md — read before responding]\n</attached-files>\nhi"
+    ) == (
+        "<attached-files>\n[Referenced files: notes.md — read before responding]\n"
+        f"{ATTACHED}\n"
+        f"- shot.png (path: {shot}, type: image/png, size: 74 bytes, dimensions: 7x3 px)\n"
+        f"{HEADER}\n"
+        f"- clip.mp4 (path: {clip}, type: video/mp4, size: 6 bytes)\n"
+        "</attached-files>\nhi"
+    )
+    assert [f.path for f in notices.unseen.files] == [clip]
+
+
+def test_a_turn_with_no_media_leaves_the_message_alone(tmp_path: Path):
+    assert TurnMediaNotices.collect(["notes.md"], [], tmp_path).wrap("hi") == "hi"

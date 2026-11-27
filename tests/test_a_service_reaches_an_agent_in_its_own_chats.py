@@ -154,7 +154,7 @@ async def test_the_files_go_through_the_composers_own_upload(tmp_path: Path):
     assert kept == project / ".igni" / "attachments" / "s-claim" / "damage_photo.png"
     assert kept.read_bytes() == PNG
     composed, referenced = process_file_mentions(f"Assess it.\n\n@{ref}")
-    assert referenced == [ref] and "<attached-files>" in composed
+    assert referenced == [ref] and composed.endswith(f"@{ref}")
 
 
 # ── As sent ───────────────────────────────────────────────────

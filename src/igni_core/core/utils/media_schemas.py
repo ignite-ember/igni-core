@@ -212,6 +212,8 @@ class MediaAttachments(BaseModel):
     audio: list[Audio] = Field(default_factory=list)
     videos: list[Video] = Field(default_factory=list)
     files: list[File] = Field(default_factory=list)
+    local_paths: list[str] = Field(default_factory=list)
+    """The local files attached, as :meth:`MediaResolver.attach_local_paths` was given them."""
 
     def add(self, bucket: MediaBucket, item: MediaObject) -> None:
         """Put one attachment in the bucket its kind belongs to.
@@ -235,6 +237,7 @@ class MediaAttachments(BaseModel):
         self.audio.extend(other.audio)
         self.videos.extend(other.videos)
         self.files.extend(other.files)
+        self.local_paths.extend(other.local_paths)
 
     def to_kwargs(self) -> dict[str, Any]:
         """Lower to ``**kwargs`` for ``team.arun(**media.to_kwargs())``.
