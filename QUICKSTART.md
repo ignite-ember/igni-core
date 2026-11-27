@@ -312,6 +312,7 @@ igni's main team is **shell-first**: `Bash` handles reads, search, and file list
 | `Edit` | Targeted string-replacement editing |
 | `Schedule` | Schedule tasks for later or recurring execution |
 | `NotebookEdit` | Read and edit Jupyter notebook cells |
+| `ReadDocument` | Read a PDF, Word, Excel, PowerPoint, CSV or TSV file in the project as text |
 | `WebSearch` | Web search |
 | `WebFetch` | Fetch URL content |
 | `Orchestrate` | Spawn sub-teams |

@@ -248,6 +248,7 @@ Matchers filter when a hook fires. Only hooks whose matcher matches the tool nam
 > | `WebSearch` | `web_search` / `search_news` |
 > | `WebFetch` | `fetch_url` / `fetch_json` |
 > | `Schedule` | `schedule_task` / `list_scheduled_tasks` / `cancel_scheduled_task` |
+> | `ReadDocument` | `read_document` |
 >
 > Note `create_file` sits under `Edit`, not `Write` — `Write` is a
 > write-only `FileTools` that registers `save_file` and nothing else.

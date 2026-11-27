@@ -117,6 +117,7 @@ fails to resolve, which is silent — the agent simply does not get that tool.
 | `WebFetch` | `WebTools` | `fetch_url`, `fetch_json` | yes |
 | `Schedule` | `ScheduleTools` | `schedule_task`, `list_scheduled_tasks`, `cancel_scheduled_task` | yes |
 | `NotebookEdit` | `NotebookTools` | `notebook_read`, `notebook_read_cell`, `notebook_add_cell`, `notebook_edit_cell`, `notebook_remove_cell` | yes |
+| `ReadDocument` | `ReadDocumentTools` | `read_document` | yes |
 | `Visualize` | `VisualizeTools` | (UI payload) | no — main agent only |
 | `mcp_<server>_<tool>` | `MCPTools` | per server | via `.mcp.json`, not `tools:` |
 
@@ -124,7 +125,9 @@ fails to resolve, which is silent — the agent simply does not get that tool.
 `FileTools` with `enable_read_file=False` and its siblings off, keeping only
 `save_file`, so a file is read with `run_shell_command "cat <path>"`. The same
 goes for search: no `Grep`, no `Glob`, no `LS` — those are `rg`, shell globs and
-`ls` through `Bash`.
+`ls` through `Bash`. `ReadDocument` is the one exception, and only for what `cat`
+cannot show: PDF, Word, Excel and PowerPoint files, and CSV/TSV as a table
+([TOOLS.md](TOOLS.md#readdocument-readdocumenttools)).
 
 This section previously listed `Read`, `Grep`, `Glob`, `LS`, `NotebookRead`,
 `TodoWrite`, `KillShell` and `Python`, and said igni "uses the same tool names as
@@ -181,63 +184,63 @@ igni ships with foundational agents in Claude Code compatible format plus igni e
 
 **explorer.md** — Read-only codebase search and analysis.
 ```yaml
-tools: Bash, WebFetch, WebSearch
+tools: Bash, WebFetch, WebSearch, ReadDocument
 tags: [search, read-only, exploration]
 ```
 
 **architect.md** — Designs component architecture, data flows, and interfaces.
 ```yaml
-tools: Bash, WebSearch
+tools: Bash, WebSearch, ReadDocument
 tags: [architecture, design, read-only]
 ```
 
 **editor.md** — Creates and modifies files. Can spawn sub-teams for exploration or review.
 ```yaml
-tools: Write, Edit, Bash
+tools: Write, Edit, Bash, ReadDocument
 tags: [coding, editing, file-write]
 ```
 
 **simplifier.md** — Post-edit code polish, dead code removal, complexity reduction.
 ```yaml
-tools: Edit, Bash
+tools: Edit, Bash, ReadDocument
 tags: [quality, refactoring, simplification]
 ```
 
 **reviewer.md** — Reviews code for bugs, security issues, and style compliance.
 ```yaml
-tools: Bash, WebFetch, WebSearch
+tools: Bash, WebFetch, WebSearch, ReadDocument
 color: red
 tags: [review, quality, read-only]
 ```
 
 **security.md** — Vulnerability analysis, OWASP Top 10, auth and input validation review.
 ```yaml
-tools: Bash, WebSearch
+tools: Bash, WebSearch, ReadDocument
 tags: [security, audit, vulnerabilities, read-only]
 ```
 
 **qa.md** — Test generation, test quality review, and coverage gap analysis.
 ```yaml
-tools: Write, Edit, Bash
+tools: Write, Edit, Bash, ReadDocument
 tags: [testing, qa, coverage]
 ```
 
 **debugger.md** — Bug diagnosis, stack trace analysis, root cause finding.
 ```yaml
-tools: Edit, Bash
+tools: Edit, Bash, ReadDocument
 tags: [debugging, diagnostics, bug-fix]
 ```
 
 > **Note:** Git operations (commits, branches, PRs, force-push safety) are handled by **editor.md**'s built-in safety protocol — there is no separate `git.md` agent.
 **docs.md** — Documentation writing and updates.
 ```yaml
-tools: Bash, Write, Edit
+tools: Bash, Write, Edit, ReadDocument
 tags: [documentation, writing, docs]
 ```
 
 **plan_researcher.md** — Spawned by `enter_plan_mode`: researches the codebase read-only and reports findings and a proposed plan, which the main agent turns into the plan the person reviews.
 ```yaml
-tools: Bash, WebFetch, WebSearch
+tools: Bash, WebFetch, WebSearch, ReadDocument
 ```
 
 **visualizer.md** — Renders data the caller hands over as UI (charts, tables, cards) through the `Visualize` tool. Other agents delegate to it.

@@ -161,7 +161,8 @@ covers your files and the web:
   (each a search or a GET, sending nothing else); an extension's or MCP
   server's tools whose approved manifest says `readOnlyHint: true` and
   `destructiveHint: false`, whether they read their own data or the web
-  (CodeIndex's `codeindex_cypher`, for one); and the notebook readers.
+  (CodeIndex's `codeindex_cypher`, for one); the notebook readers; and
+  `read_document`, which reads a PDF or Office file inside the project.
 - **Asked:** a `fetch_url`/`fetch_json` whose URL looks like it carries a
   secret or token (`?token=`, `?api_key=`, `$VAR`) — the same check Bypass's
   last check makes. Headless, with nobody to answer, it is refused.
