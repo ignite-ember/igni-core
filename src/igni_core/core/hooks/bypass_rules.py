@@ -19,10 +19,13 @@ directory so the deletion rule can tell them apart.
 
 from __future__ import annotations
 
+import os
 import re
 import shlex
 from fnmatch import fnmatch
 from pathlib import Path
+
+from igni_core.core.paths import CONFIG_DIR, LEGACY_CONFIG_DIR
 
 #: Files that are almost never a legitimate thing for an agent to read on its
 #: own — private keys, cloud and registry credentials, auth stores. Reading one
@@ -48,6 +51,12 @@ _SECRET_NAME_GLOBS: tuple[str, ...] = (
     "credentials.json",
     "service-account*.json",
 )
+#: igni's own key stores in the home config directory (``~/.igni``, or the
+#: legacy ``~/.ember``): ``config.yaml`` holds the model registry's API keys
+#: and ``credentials.json`` the cloud sign-in token. Their backups hold the
+#: same keys. A project's ``.igni/config.yaml`` is ordinary work and is left alone.
+_IGNI_HOME_DIRS: tuple[str, ...] = (CONFIG_DIR, LEGACY_CONFIG_DIR)
+_IGNI_SECRET_GLOBS: tuple[str, ...] = ("config.yaml*", "config.yml*", "credentials.json*")
 _SECRET_PATH_SUBSTR: tuple[str, ...] = (
     "/.ssh/",
     "/.aws/credentials",
@@ -61,14 +70,33 @@ _READ_UTILS = r"cat|bat|less|more|head|tail|nl|tac|xxd|od|hexdump|strings|base64
 _SECRET_IN_SHELL = (
     r"(~?/?\.ssh/|\bid_rsa\b|\bid_ed25519\b|\bid_ecdsa\b|\bid_dsa\b|\.aws/credentials|"  # noqa: S105 — a pattern that detects secrets, not one
     r"\.netrc\b|\.git-credentials\b|\.pypirc\b|\.npmrc\b|\.kube/config|\.docker/config\.json|"
-    r"\.pem\b|\.p12\b|\.pfx\b)"
+    r"\.pem\b|\.p12\b|\.pfx\b|\bcredentials\.json\b)"
 )
+
+
+def _is_igni_secret(path: str) -> bool:
+    """True when ``path`` names one of igni's key stores in the home config directory."""
+    candidate = Path(os.path.expandvars(os.path.expanduser(path)))
+    home = Path.home()
+    return any(candidate.parent == home / d for d in _IGNI_HOME_DIRS) and any(
+        fnmatch(candidate.name, glob) for glob in _IGNI_SECRET_GLOBS
+    )
+
+
+def _igni_secret_in_shell() -> re.Pattern[str]:
+    """A read utility aimed at one of igni's home key stores, as a shell command writes it."""
+    homes = "|".join(re.escape(h) for h in ("~", "$HOME", "${HOME}", str(Path.home())))
+    dirs = "|".join(re.escape(d) for d in _IGNI_HOME_DIRS)
+    target = rf"(?:{homes})/(?:{dirs})/(?:config\.ya?ml|credentials\.json)"
+    return re.compile(rf"\b({_READ_UTILS})\b[^|;&]*{target}", re.IGNORECASE)
 
 
 def _is_secret_file(path: str) -> bool:
     """True when ``path`` names a credential, private key or auth store."""
     if not path:
         return False
+    if _is_igni_secret(path):
+        return True
     name = Path(path).name
     if any(fnmatch(name, glob) for glob in _SECRET_NAME_GLOBS):
         return True
@@ -216,6 +244,8 @@ _MAX_LENGTH = 4096
 def flag_shell(command: str, project_dir: Path | None) -> str | None:
     """Why ``command`` needs a person's yes, or None when nothing matched."""
     text = command or ""
+    if _igni_secret_in_shell().search(text):
+        return "reads a credential or secret file"
     for pattern, why in _SHELL_RULES:
         if pattern.search(text):
             return why

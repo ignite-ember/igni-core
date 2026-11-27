@@ -128,6 +128,12 @@ project, `curl | sh`, force-pushing, sending credentials off the machine…),
 then Laya, a small typed-decision model, for what no rule names. A call
 either flags is turned back into the ordinary approval prompt.
 
+Reads are not checked, except a read of a credential or key file: a
+private key, a cloud or registry credential, and igni's own key stores in
+the home config directory — `~/.igni/config.yaml` (the model registry's API
+keys), `~/.igni/credentials.json` (the cloud sign-in token) and their
+backups. Reading one asks first, by a file read or a shell command alike.
+
 Laya does not run inside the backend. It runs in **igni's decisions
 service** (`python -m igni_core.decisions_server`), which brings torch and
 the model's checkpoints:
