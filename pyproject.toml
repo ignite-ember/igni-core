@@ -83,12 +83,19 @@ dependencies = [
     # transitive dependency, which a security control may not rely on.
     "cryptography~=50.0",
     "aiofiles~=25.1.0",
-    # The document readers — pypdf, python-docx, python-pptx, openpyxl,
+    # The document readers — python-docx, python-pptx, openpyxl,
     # beautifulsoup4, youtube_transcript_api, arxiv, wikipedia — and
     # weasyprint for PDF export were here because the document store
     # lived here. It is the Artifacts extension now, and they are its
-    # dependencies: a machine that never installs it never installs a
-    # PDF parser. Nothing left in igni imports any of them.
+    # dependencies. Nothing left in igni imports any of them.
+    #
+    # Except a PDF's text. A PDF a person attaches is read into the
+    # message (``core/utils/attached_pdf_text.py``): without it the agent
+    # wrote its own PDF stream decoder across fifteen shell calls and then
+    # pip-installed pypdf into /tmp, which an air-gapped machine cannot do.
+    # Pure Python, BSD-3-Clause, no dependencies of its own (AES-encrypted
+    # PDFs use ``cryptography``, already above).
+    "pypdf~=7.2.0",
     "dateparser~=1.4.0",
     "websockets~=16.0",
     # Server discovery reads a TXT record in the customer's own zone,
