@@ -30,6 +30,10 @@ const waiting = new Map();
 window.addEventListener("message", (event) => {
   const message = event.data;
   if (event.source !== host || message?.igni !== 1) return;
+  if (message.kind === "hello" || message.kind === "theme") {
+    // igni draws its header over the top of the frame: start below it.
+    document.body.style.paddingTop = message.tokens?.["--inset-top"] ?? "";
+  }
   if (message.kind === "hello") {
     nonce = message.nonce;
     onHello();
