@@ -1,15 +1,4 @@
-"""Bypass asks before the agent reads igni's own key stores.
-
-``~/.igni/config.yaml`` holds the model registry's API keys and
-``~/.igni/credentials.json`` the cloud sign-in token. In a real Bypass
-session with only the rules deciding (the safety model was not
-installed), the agent ran ``sqlite3`` and ``grep`` across ``~/.igni``
-unasked; nothing in the rules named these two files, so ``cat
-~/.igni/config.yaml`` would have run the same way. A file read of
-``config.yaml`` was not flagged either.
-
-These go through the real guard, rules only, and the person declines.
-"""
+"""Bypass asks before the agent reads igni's own key stores, rules only, and the person declines."""
 
 from __future__ import annotations
 
@@ -57,6 +46,10 @@ def _check(project: Path, tool: str, args: dict[str, Any]) -> tuple[str | None, 
         "cat ~/.igni/credentials.json",
         "cat ~/.igni/config.yaml.bak-before-m3.1-flash",
         "grep api_key ~/.ember/config.yaml",
+        "grep -r api_key ~/.igni",
+        "rg sk- ~/.igni/",
+        "cat ~/.igni/*.yaml",
+        "grep key ~/.igni/config*",
     ],
 )
 def test_a_shell_read_of_an_igni_key_store_is_put_to_the_person(home, tmp_path, command):
@@ -86,6 +79,7 @@ def test_a_file_read_of_an_igni_key_store_is_put_to_the_person(home, tmp_path, p
         ("run_shell_command", {"command": "cat .igni/config.yaml"}),
         ("read_file", {"file_path": "{project}/.igni/config.yaml"}),
         ("run_shell_command", {"command": "ls -la ~/.igni"}),
+        ("run_shell_command", {"command": "tail -50 ~/.igni/logs/backend.log"}),
     ],
 )
 def test_a_project_config_and_a_listing_are_ordinary_work(home, tmp_path, tool, args):

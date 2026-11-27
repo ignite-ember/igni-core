@@ -132,7 +132,9 @@ Reads are not checked, except a read of a credential or key file: a
 private key, a cloud or registry credential, and igni's own key stores in
 the home config directory — `~/.igni/config.yaml` (the model registry's API
 keys), `~/.igni/credentials.json` (the cloud sign-in token) and their
-backups. Reading one asks first, by a file read or a shell command alike.
+backups. Reading one asks first, by a file read or a shell command alike; so
+does a shell read of a glob over `~/.igni` or of the directory itself
+(`grep -r key ~/.igni`).
 
 Laya does not run inside the backend. It runs in **igni's decisions
 service** (`python -m igni_core.decisions_server`), which brings torch and

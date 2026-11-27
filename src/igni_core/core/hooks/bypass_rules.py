@@ -51,12 +51,10 @@ _SECRET_NAME_GLOBS: tuple[str, ...] = (
     "credentials.json",
     "service-account*.json",
 )
-#: igni's own key stores in the home config directory (``~/.igni``, or the
-#: legacy ``~/.ember``): ``config.yaml`` holds the model registry's API keys
-#: and ``credentials.json`` the cloud sign-in token. Their backups hold the
-#: same keys. A project's ``.igni/config.yaml`` is ordinary work and is left alone.
 _IGNI_HOME_DIRS: tuple[str, ...] = (CONFIG_DIR, LEGACY_CONFIG_DIR)
+"""igni's home config directories, ``~/.igni`` and the legacy ``~/.ember``."""
 _IGNI_SECRET_GLOBS: tuple[str, ...] = ("config.yaml*", "config.yml*", "credentials.json*")
+"""igni's key stores there (API keys, the cloud sign-in token) and their backups."""
 _SECRET_PATH_SUBSTR: tuple[str, ...] = (
     "/.ssh/",
     "/.aws/credentials",
@@ -84,10 +82,11 @@ def _is_igni_secret(path: str) -> bool:
 
 
 def _igni_secret_in_shell() -> re.Pattern[str]:
-    """A read utility aimed at one of igni's home key stores, as a shell command writes it."""
+    """A read utility aimed at igni's home key stores, a glob over them, or the directory itself."""
     homes = "|".join(re.escape(h) for h in ("~", "$HOME", "${HOME}", str(Path.home())))
     dirs = "|".join(re.escape(d) for d in _IGNI_HOME_DIRS)
-    target = rf"(?:{homes})/(?:{dirs})/(?:config\.ya?ml|credentials\.json)"
+    store = r"config\.ya?ml|credentials\.json|[^\s/'\"]*[*?\[][^\s/'\"]*"
+    target = rf"(?:{homes})/(?:{dirs})(?:/(?:{store})|/?(?=[\s'\"]|$))"
     return re.compile(rf"\b({_READ_UTILS})\b[^|;&]*{target}", re.IGNORECASE)
 
 
