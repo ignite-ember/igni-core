@@ -135,15 +135,22 @@ class RunController:
         self._interrupted_summary: InterruptedRunSummary | None = None
         # Serialisation + cancellation state — single owner (Pattern 1).
         self._run_lock = asyncio.Lock()
-        self._current_run_task: asyncio.Task | None = None
+        # Every task running one of the session's runs: a turn, a resumed
+        # run, a scheduled task run now. More than one at a time when a
+        # message starts a turn while a resumed run goes on — one slot lost
+        # the resumed run, and ``cancel_run`` found nothing to stop.
+        self._run_tasks: set[asyncio.Task] = set()
+        # Resumes that pass through a run already going (a sub-agent's
+        # answer): not runs of their own, but a cancel ends them too.
+        self._passengers: set[asyncio.Task] = set()
         # The current run's stream ended paused for a person: the run is
         # only closing, and its answer resumes it (:meth:`continue_run`).
         self._stream_ended_paused = False
         #: The chat the latest run belongs to; a resumed run is still it.
         self._run_session_id = ""
-        # The task ``cancel_run`` cancelled, so the work it was running can
-        # tell the person's cancel from any other.
-        self._cancelled_by_person: asyncio.Task | None = None
+        # The tasks ``cancel_run`` cancelled, so the work they were running
+        # can tell the person's cancel from any other.
+        self._cancelled_by_person: set[asyncio.Task] = set()
         # The pending-message id stamped by :meth:`_run_locked`
         # before streaming starts. Held on the instance so the
         # sync :meth:`cancel_run` can mark the row as interrupted
@@ -173,17 +180,31 @@ class RunController:
 
     @property
     def current_run_task(self) -> asyncio.Task | None:
-        """The ``asyncio.Task`` currently iterating the run body, or
-        ``None`` when idle. Set/cleared inside :meth:`run_message`
-        so tests inspecting the field see the same lifecycle as
-        production."""
-        return self._current_run_task
+        """A task running one of the session's runs, or ``None`` when idle."""
+        return next(iter(self._run_tasks), None)
 
     def is_processing(self) -> bool:
-        """True when a run is holding state a second submit would
-        race on. Wire-compatible with the previous
-        ``BackendServer._processing`` bool."""
-        return self._phase.is_active()
+        """True while any run of the session is going.
+
+        A turn that ended while a resumed run still goes on leaves the
+        phase ``done``; the session is busy all the same.
+        """
+        return self._phase.is_active() or bool(self._run_tasks)
+
+    def _begin_run(self) -> asyncio.Task | None:
+        """The current task is one of the session's runs until :meth:`_end_run`."""
+        task = asyncio.current_task()
+        if task is not None:
+            self._run_tasks.add(task)
+        return task
+
+    def _end_run(self, task: asyncio.Task | None) -> None:
+        """``task``'s run is over; the phase settles once no other run goes on."""
+        if task is not None:
+            self._run_tasks.discard(task)
+            self._cancelled_by_person.discard(task)
+        if not self._run_tasks and self._phase.is_active():
+            self._transition_to(RunPhase.done)
 
     def set_interrupted_summary(self, summary: InterruptedRunSummary | None) -> None:
         """Route for ``detect_interrupted_run`` to hand off the
@@ -243,33 +264,18 @@ class RunController:
         ``run_message`` to this method 1:1.
         """
         async with self._run_lock:
-            self._current_run_task = asyncio.current_task()
             self._stream_ended_paused = False
             # The chat this run is, for everything it sends while it runs.
             self._run_session_id = self._session.session_id
-            try:
-                with run_session(self._run_session_id):
-                    async for proto in self._run_locked(text, media):
+            # A cancelled run reaches none of ``_run_locked``'s terminal
+            # transitions (``CancelledError`` is a BaseException): the run's
+            # end settles the phase (:meth:`_relay`), or ``get_processing``
+            # said busy for the rest of the process's life.
+            with run_session(self._run_session_id):
+                relay = self._relay(self._run_locked(text, media), self._run_tasks)
+                async with contextlib.aclosing(relay) as frames:
+                    async for proto in frames:
                         yield proto
-            except asyncio.CancelledError:
-                yield self.cancelled_info()
-            finally:
-                self._current_run_task = None
-                # A cancelled run reaches none of ``_run_locked``'s
-                # terminal transitions: ``CancelledError`` is a
-                # BaseException, so its ``except Exception`` branch
-                # doesn't fire and its ``finally`` only tears down the
-                # checkpoint task + httpx client. The phase stayed
-                # ``streaming`` forever, which meant ``is_processing()``
-                # stayed True — the FE's ``get_processing`` reported the
-                # session busy for the rest of the process's life and
-                # ``SessionPool.evict_idle`` could never reclaim the
-                # runtime. Mapped here rather than in the ``except``
-                # above so a generator closed without ever resuming
-                # (the consumer breaking out of its ``async for``, or a
-                # re-raised cancel on the ``yield``) lands the same way.
-                if self._phase.is_active():
-                    self._transition_to(RunPhase.done)
 
     async def continue_run(
         self, stream: AsyncIterator[msg.Message]
@@ -282,7 +288,7 @@ class RunController:
         its parent run still holds it. Then the parent is the session's
         run already, and the stream passes through untouched.
         """
-        if self._current_run_task is not None and self._stream_ended_paused:
+        if self._run_tasks and self._stream_ended_paused:
             # The run that paused has streamed its last frame but is still
             # closing (its checkpoint, its model client) when a quick answer
             # arrives. It is not a parent waiting on this answer: wait for it
@@ -290,12 +296,19 @@ class RunController:
             # would, and no Stop hook saw its reply.
             async with self._run_lock:
                 pass
-        if self._current_run_task is not None:
-            async for proto in stream:
+        if self._run_tasks:
+            relay = self._relay(stream, self._passengers)
+        else:
+            self._transition_to(RunPhase.streaming)
+            relay = self._relay(self._continued(stream), self._run_tasks)
+        async with contextlib.aclosing(relay) as frames:
+            async for proto in frames:
                 yield proto
-            return
-        self._current_run_task = asyncio.current_task()
-        self._transition_to(RunPhase.streaming)
+
+    async def _continued(
+        self, stream: AsyncIterator[msg.Message]
+    ) -> AsyncGenerator[msg.Message, None]:
+        """The resumed run's stream, closed as the run that paused would be."""
         events_before = self._session.event_log_store.seq
         pending_id = self._paused_pending_id
         reply: list[str] = []
@@ -335,10 +348,48 @@ class RunController:
                 )
             raise
         finally:
-            self._current_run_task = None
             await self._keep_event_log(events_before)
-            if self._phase.is_active():
-                self._transition_to(RunPhase.done)
+
+    async def _relay(
+        self, body: AsyncIterator[msg.Message], tasks: set[asyncio.Task]
+    ) -> AsyncGenerator[msg.Message, None]:
+        """Run ``body`` in a task of its own, kept in ``tasks``, and yield what it streams.
+
+        That task is what ``cancel_run`` cancels, so a cancel lands inside
+        the run. Cancelling the task that sends the frames to the windows
+        often landed on a send instead, where the run never heard it: its
+        team went on and the session stayed busy for every window (session
+        6fa3e09e). A consumer that stops reading stops the run.
+        """
+        frames: asyncio.Queue[msg.Message | None] = asyncio.Queue()
+
+        async def pump() -> None:
+            async for proto in body:
+                frames.put_nowait(proto)
+
+        task = background.daemon(pump(), name="session-run")
+        # A callback, not a ``finally``: a task cancelled before its first
+        # step never runs its body at all.
+        task.add_done_callback(lambda _done: frames.put_nowait(None))
+        tasks.add(task)
+        try:
+            while (proto := await frames.get()) is not None:
+                yield proto
+            await task
+        except asyncio.CancelledError:
+            if not (task.cancelled() and task in self._cancelled_by_person):
+                raise
+            yield self.cancelled_info()
+        finally:
+            if not task.done():
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+            if tasks is self._run_tasks:
+                self._end_run(task)
+            else:
+                tasks.discard(task)
+                self._cancelled_by_person.discard(task)
 
     async def _close_abandoned_pause(self) -> None:
         """A new message while a run stands paused: the person moved on from
@@ -370,22 +421,18 @@ class RunController:
         with :class:`RunCancelledError` for whoever asked for the work.
         """
         async with self._run_lock:
-            task = asyncio.current_task()
-            self._current_run_task = task
+            task = self._begin_run()
             self._transition_to(RunPhase.streaming)
             try:
                 with run_session(self._session.session_id):
                     return await work()
             except asyncio.CancelledError:
-                if task is None or self._cancelled_by_person is not task:
+                if task is None or task not in self._cancelled_by_person:
                     raise
                 task.uncancel()
                 raise RunCancelledError(CANCELLED_BY_USER) from None
             finally:
-                self._current_run_task = None
-                self._cancelled_by_person = None
-                if self._phase.is_active():
-                    self._transition_to(RunPhase.done)
+                self._end_run(task)
 
     def cancel_run(self) -> bool:
         """Cancel the currently running agent and kill any
@@ -410,17 +457,23 @@ class RunController:
         later runs nothing, and the cancel answers ``True``. It used to
         answer ``False`` and leave the approval waiting — the next
         window was offered it, and answering it ran the tool.
+
+        Every run of the session goes, not only the latest: a turn started
+        while a resumed run went on took the one slot there was, and once
+        it ended the resumed run was out of reach — it ran on for minutes
+        while every Escape answered ``False``.
         """
         self._cancel_own_foreground()
 
         self._stamp_interrupted("cancelled", last_error=None)
         ended_a_pause = self._end_pause()
 
-        task = self._current_run_task
-        if task and not task.done():
+        live = [t for t in (*self._run_tasks, *self._passengers) if not t.done()]
+        for task in live:
             logger.info("Cancelling run task %s", task.get_name())
-            self._cancelled_by_person = task
+            self._cancelled_by_person.add(task)
             task.cancel()
+        if live:
             return True
         if ended_a_pause:
             self._end_cancelled_pause()
@@ -501,7 +554,7 @@ class RunController:
         supervisor would have to stamp an owning session id on the
         foreground slot (``core/tools/process_supervisor.py``).
         """
-        if self._phase is not RunPhase.streaming:
+        if self._phase is not RunPhase.streaming and not self._run_tasks:
             logger.debug(
                 "cancel: session is %s, not streaming — leaving the shared foreground slot alone",
                 self._phase,

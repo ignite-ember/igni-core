@@ -151,10 +151,11 @@ class _Rig:
         c._phase = RunPhase.idle
         c._interrupted_summary = None
         c._pending_id_for_cancel = None
-        c._current_run_task = None
+        c._run_tasks = set()
+        c._passengers = set()
+        c._cancelled_by_person = set()
         c._stream_ended_paused = False
         c._run_session_id = ""
-        c._cancelled_by_person = None
         c._run_lock = asyncio.Lock()
         c._pending_journal = self.journal
         c._hook_gate = self.hooks

@@ -116,7 +116,9 @@ def _controller(stream_messages: list[msg.Message] | None) -> RunController:
     controller._phase = RunPhase.idle
     controller._interrupted_summary = None
     controller._pending_id_for_cancel = None
-    controller._current_run_task = None
+    controller._run_tasks = set()
+    controller._passengers = set()
+    controller._cancelled_by_person = set()
     controller._run_session_id = ""
     controller._run_lock = asyncio.Lock()
     controller._pending_journal = _Journal()

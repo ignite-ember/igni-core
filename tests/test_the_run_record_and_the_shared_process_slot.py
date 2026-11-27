@@ -101,7 +101,9 @@ def _controller(stream_messages: list[msg.Message]) -> tuple[RunController, _Jou
     controller._phase = RunPhase.idle
     controller._interrupted_summary = None
     controller._pending_id_for_cancel = None
-    controller._current_run_task = None
+    controller._run_tasks = set()
+    controller._passengers = set()
+    controller._cancelled_by_person = set()
     controller._pending_journal = journal
     controller._hook_gate = _HookGate()
     controller._dispatcher = _Dispatcher()
@@ -209,7 +211,9 @@ def _cancellable(phase: RunPhase, supervisor: _FakeSupervisor) -> RunController:
     controller = RunController.__new__(RunController)
     controller._phase = phase
     controller._pending_id_for_cancel = None
-    controller._current_run_task = None
+    controller._run_tasks = set()
+    controller._passengers = set()
+    controller._cancelled_by_person = set()
     controller._session = SimpleNamespace(main_team=SimpleNamespace(run_id=None))
     controller._supervisor = supervisor
     return controller
@@ -238,6 +242,19 @@ class TestCancelAndTheSharedForegroundSlot:
         _cancellable(RunPhase.streaming, fake_supervisor).cancel_run()
 
         assert fake_supervisor.cancelled == 1
+
+    async def test_a_run_going_on_after_another_ended_still_kills_its_shell(self, fake_supervisor):
+        """A turn that ended beside a resumed run left the phase ``done``;
+        the resumed run's shell is the session's all the same."""
+        controller = _cancellable(RunPhase.done, fake_supervisor)
+        resumed = asyncio.create_task(asyncio.sleep(3600))
+        controller._run_tasks = {resumed}
+
+        controller.cancel_run()
+        await asyncio.gather(resumed, return_exceptions=True)
+
+        assert fake_supervisor.cancelled == 1
+        assert resumed.cancelled()
 
 
 # ── Background-process completions are conversation content ──────────
