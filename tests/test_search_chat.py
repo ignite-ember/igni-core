@@ -375,7 +375,9 @@ class TestSearchAllChats:
         backend.session.persistence = persistence
 
         async def history(session_id: str) -> list[ChatTurn]:
-            return [_CHAT_TURN.validate_python(e.model_dump(mode="json")) for e in chats[session_id]]
+            return [
+                _CHAT_TURN.validate_python(e.model_dump(mode="json")) for e in chats[session_id]
+            ]
 
         backend.controllers.sessions = SessionsController(
             session=backend.session, chat_history_provider=history
