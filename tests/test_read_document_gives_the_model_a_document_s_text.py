@@ -194,11 +194,11 @@ def _fixtures(project: Path) -> list[Path]:
     ]
 
 
-def test_every_document_reads_as_the_attachment_does_but_for_the_read_on_hint(project):
+def test_every_document_reads_exactly_as_the_attachment_does_read_on_hint_included(project):
     for path in _fixtures(project):
         attached = AttachedDocumentText.collect([str(path)]).wrap("")
         block = attached.removeprefix("<attached-files>\n").removesuffix("\n</attached-files>")
-        tool = _read(project, path).replace(_hint("501-"), "]")
+        tool = _read(project, path)
 
         assert NONCE.sub("nonce", tool) == NONCE.sub("nonce", block), path
 

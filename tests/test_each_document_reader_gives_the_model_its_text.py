@@ -39,6 +39,11 @@ def _text(path: Path, count: str) -> str:
     return body.group(2)
 
 
+def _hint(part: str) -> str:
+    """The read-on hint an attached document's cut ends with, as ``read_document``'s does."""
+    return f' To read on, call read_document with part="{part}".]'
+
+
 def test_a_comma_csv_is_a_table_with_its_quoted_comma_kept(tmp_path):
     path = DocumentFixtures.csv_commas(tmp_path / "people.csv")
 
@@ -183,7 +188,7 @@ def test_a_long_csv_gives_its_first_rows_and_says_how_many_it_has(tmp_path):
 
     text = _text(path, "2000 rows")
 
-    assert text.endswith("| 499 | 249001 |\n[Rows truncated at 500 of 2000.]")
+    assert text.endswith("| 499 | 249001 |\n[Rows truncated at 500 of 2000." + _hint("501-"))
     assert "| 500 | 250000 |" not in text
 
 
@@ -193,7 +198,7 @@ def test_a_long_sheet_is_cut_at_the_row_cap_inside_its_own_section(tmp_path, mon
 
     assert _text(path, "2 sheets") == (
         "--- Sheet: Budget ---\n| Item | Cost |\n|---|---|\n| Rent | 1200 |\n"
-        "[Rows truncated at 2 of 4.]\n"
+        "[Rows truncated at 2 of 4." + _hint("Budget!3-") + "\n"
         "--- Sheet: Notes ---\n| Reviewed by Anna |\n|---|"
     )
 
@@ -205,7 +210,7 @@ def test_a_workbook_past_the_sheet_cap_says_how_many_sheets_it_has(tmp_path, mon
     text = _text(path, "2 sheets")
 
     assert "Notes" not in text
-    assert text.endswith("| Total | 9999 |\n[Sheets truncated at 1 of 2.]")
+    assert text.endswith("| Total | 9999 |\n[Sheets truncated at 1 of 2." + _hint("2-"))
 
 
 def test_a_deck_past_the_slide_cap_says_how_many_slides_it_has(tmp_path, monkeypatch):
@@ -215,7 +220,7 @@ def test_a_deck_past_the_slide_cap_says_how_many_slides_it_has(tmp_path, monkeyp
     text = _text(path, "2 slides")
 
     assert "Numbers" not in text
-    assert text.endswith("Mention the caps\n[Slides truncated at 1 of 2.]")
+    assert text.endswith("Mention the caps\n[Slides truncated at 1 of 2." + _hint("2-"))
 
 
 def test_a_document_past_the_character_cap_is_cut_and_says_where(tmp_path):
@@ -223,7 +228,7 @@ def test_a_document_past_the_character_cap_is_cut_and_says_where(tmp_path):
 
     text = _text(path, "")
 
-    assert text.endswith("x\n[Text truncated at 100000 characters.]")
+    assert text.endswith("x\n[Text truncated at 100000 characters." + _hint("106-"))
     assert len(text) < 100_000 + 200
 
 
@@ -232,10 +237,9 @@ def test_a_table_cut_by_the_character_cap_gets_no_row_note(tmp_path, monkeypatch
     monkeypatch.setattr(DocumentReader, "MAX_ROWS", 3)
     path = DocumentFixtures.csv_rows(tmp_path / "squares.csv", 10)
 
-    assert (
-        _text(path, "10 rows")
-        == "| n | square |\n|---|---|\n| 1 |\n[Text truncated at 30 characters.]"
-    )
+    assert _text(
+        path, "10 rows"
+    ) == "| n | square |\n|---|---|\n| 1 |\n[Text truncated at 30 characters." + _hint("2-")
 
 
 def test_a_read_that_runs_out_of_time_stops_and_says_so(tmp_path, monkeypatch):
@@ -246,7 +250,7 @@ def test_a_read_that_runs_out_of_time_stops_and_says_so(tmp_path, monkeypatch):
     text = _text(path, "2 slides")
 
     assert "Numbers" not in text
-    assert text.endswith("[Text truncated after 15 seconds of reading.]")
+    assert text.endswith("[Text truncated after 15 seconds of reading." + _hint("1-"))
 
 
 def test_a_file_no_reader_claims_is_left_alone(tmp_path):

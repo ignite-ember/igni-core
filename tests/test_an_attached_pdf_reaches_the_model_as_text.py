@@ -121,7 +121,9 @@ async def test_a_long_pdf_is_cut_and_says_where(tmp_path, monkeypatch):
 
     assert "--- Page 1 ---\n" + "a" * 15 + "\n--- Page 2 ---\n" + "b" * 5 in block
     assert "c" * 5 not in block
-    assert "[Text truncated at 20 characters.]" in block
+    assert (
+        '[Text truncated at 20 characters. To read on, call read_document with part="2-".]' in block
+    )
     assert "(3 pages)" in block
 
 

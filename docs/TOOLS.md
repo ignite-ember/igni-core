@@ -44,7 +44,7 @@ not on this list raises `Unknown tool` when the agent is built.
 | `Bash` | yes | yes | `BashOutput` is an accepted alias for the same toolkit |
 | `Schedule` | yes | yes | Also appended automatically to every sub-agent that has any tools |
 | `NotebookEdit` | yes | yes | |
-| `ReadDocument` | yes | **no** | Every bundled agent that has `Bash` declares it; `create_agent`'s tool list does not name it yet |
+| `ReadDocument` | yes | yes | Every bundled agent that has `Bash` declares it |
 | `WebSearch` | yes | yes | |
 | `WebFetch` | yes | yes | |
 | `Visualize` | yes | **no** | Used by the bundled `visualizer` sub-agent; not offered to ephemeral agents |
@@ -60,7 +60,7 @@ Sub-agent `.md` frontmatter goes through `ToolRegistry.resolve`, which
 accepts every catalog name. `create_agent` (the only way to make an
 ephemeral agent: `/agents` has no `create` verb) goes through
 `ToolRegistry.normalize_agno_names`, which validates against the smaller
-*ephemeral-visible* set — that is where `Visualize` and `ReadDocument` drop out.
+*ephemeral-visible* set — that is where `Visualize` drops out.
 
 ### Hooks: matcher gotcha
 
@@ -177,6 +177,8 @@ ReadDocumentTools(base_dir="/path/to/project")
 Every format also stops at 100,000 characters and after 15 seconds. A cut
 ends with the attachment's note plus the part to read next, for example
 `[Rows truncated at 500 of 2000. To read on, call read_document with part="501-".]`.
+An attached document that is cut ends with the same note, so the model can
+read on with the tool.
 
 The text sits inside the untrusted-output block, below a
 `[Text extracted from <path> (<count>):]` line, exactly as an attached

@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from igni_core.core.documents.block import DocumentBlock
 from igni_core.core.documents.registry import DocumentReaders
 from igni_core.core.documents.schemas import DocumentText
+from igni_core.core.documents.window import ReadWindow
 
 
 class AttachedDocumentText(BaseModel):
@@ -27,7 +28,11 @@ class AttachedDocumentText(BaseModel):
     ) -> AttachedDocumentText:
         """The text of each existing document among ``paths``, once each."""
         readers = readers or DocumentReaders.default()
-        documents = [readers.read(Path(p)) for p in dict.fromkeys(paths) if Path(p).is_file()]
+        documents = [
+            readers.read(Path(p), ReadWindow.parse("", p))
+            for p in dict.fromkeys(paths)
+            if Path(p).is_file()
+        ]
         return cls(documents=[d for d in documents if d is not None])
 
     def wrap(self, message: str) -> str:
