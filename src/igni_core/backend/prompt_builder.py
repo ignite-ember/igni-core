@@ -30,6 +30,7 @@ from igni_core.core.utils.attachment_store import AttachmentReferences, Attachme
 from igni_core.core.utils.media import MediaResolver
 from igni_core.core.utils.media_schemas import MediaAttachments
 from igni_core.core.utils.mentions import process_file_mentions
+from igni_core.core.utils.text_only_media import TextOnlyMediaNotice
 from igni_core.protocol import messages as msg
 
 
@@ -42,6 +43,8 @@ class _FileAttachStep(BaseModel):
     text: str
     media: MediaAttachments | None = None
     info_messages: list[msg.Info] = Field(default_factory=list)
+    #: Every file the text names that the resolver found.
+    paths: list[str] = Field(default_factory=list)
 
 
 class _UrlAttachStep(BaseModel):
@@ -65,7 +68,9 @@ class PromptBuilder:
 
     1. ``@file`` mentions → substitute + announce.
     2. Bare filename references → resolve; on vision-capable models
-       attach as media.
+       attach as media. A text-only model is told the media files'
+       metadata instead (:class:`TextOnlyMediaNotice`), and the
+       session's media guard refuses its reads of them.
     3. URL media (images in the text) → attach on vision models.
     4. Inject learnings (fire-and-forget onto the team's
        instructions list).
@@ -89,14 +94,23 @@ class PromptBuilder:
         ``media`` as the Agno inputs."""
         info: list[msg.Info] = []
         text = self._localize_attachments(text)
-        text, mentioned_files = process_file_mentions(text)
+        model_cfg = self._resolve_model_config()
+        text, mentioned_files = process_file_mentions(text, vision=model_cfg.vision)
         if mentioned_files:
             info.append(msg.Info(text=f"Referenced: {', '.join(mentioned_files)}"))
 
-        model_cfg = self._resolve_model_config()
         file_step = self._attach_file_references(text, media, model_cfg)
         text, media = file_step.text, file_step.media
         info.extend(file_step.info_messages)
+        notice = TextOnlyMediaNotice()
+        if not model_cfg.vision:
+            notice = TextOnlyMediaNotice.collect(
+                [*mentioned_files, *file_step.paths], self._session.project_dir
+            )
+            text = notice.wrap(text)
+        self._session.media_guard.begin_turn(notice.files)
+        if notice.files:
+            info.append(msg.Info(text=notice.user_notice(self._session.settings.models.default)))
         url_step = self._attach_url_media(text, media, model_cfg)
         media = url_step.media
         info.extend(url_step.info_messages)
@@ -155,6 +169,7 @@ class PromptBuilder:
         resolved = self._resolver.resolve_text_references(text)
         text = resolved.text
         resolved_files = resolved.paths
+        named = [*resolved.paths, *resolved.attachable]
         if model_cfg.vision and resolved.attachable:
             # ``attachable``, not ``paths``: an upload is named by its
             # absolute path, which there is nothing to rewrite in.
@@ -168,13 +183,15 @@ class PromptBuilder:
                     text=text,
                     media=media,
                     info_messages=[msg.Info(text=f"Attached: {len(resolved.attachable)} file(s)")],
+                    paths=named,
                 )
         if not resolved_files:
-            return _FileAttachStep(text=text, media=media)
+            return _FileAttachStep(text=text, media=media, paths=named)
         return _FileAttachStep(
             text=text,
             media=media,
             info_messages=[msg.Info(text=f"Resolved: {', '.join(resolved_files)}")],
+            paths=named,
         )
 
     def _attach_url_media(

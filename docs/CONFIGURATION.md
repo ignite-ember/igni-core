@@ -221,7 +221,7 @@ There are three providers:
 | `api_key_env` | string | no | Environment variable name containing the API key |
 | `api_key_cmd` | string | no | Shell command that outputs the API key (e.g., `op read ...` for 1Password) |
 | `context_window` | int | no | Context window size in tokens. Falls back to 128k if not set |
-| `vision` | bool | no | Whether the model supports image input. Default `false`. When `true`, file references (images, PDFs) are attached as multimodal content. When `false`, file paths are resolved so the AI can read them via tools |
+| `vision` | bool | no | Whether the model supports image input. Default `false`. When `true`, file references (images, PDFs) are attached as multimodal content. When `false`, file paths are resolved so the AI can read them via tools; images, audio and video are described by their metadata only (name, path, type, size, pixel size) and the model is told not to read their content |
 | `temperature` | float | no | Default temperature for this model. Not sent for `anthropic` |
 | `max_tokens` | int | no | Default max output tokens |
 | `timeout` | int | no | Request timeout in seconds. Default 60 |

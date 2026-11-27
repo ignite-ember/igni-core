@@ -22,6 +22,7 @@ from igni_core.core.config.settings import Settings
 from igni_core.core.hooks.bypass_explainer import CallExplainer
 from igni_core.core.hooks.bypass_guard import Ask, BypassGuard
 from igni_core.core.hooks.permission.evaluator_stage import AskPerson
+from igni_core.core.hooks.text_only_media_guard import TextOnlyMediaGuard
 from igni_core.core.hooks.tool_hook import ToolEventHook
 from igni_core.core.mcp.hints import ToolHintsRegistry
 from igni_core.core.session.hooks import SessionHooks
@@ -68,6 +69,8 @@ class ToolEventHookFactory:
         #: The session's in-run approval channel, for a call the evaluator
         #: wants asked about that was built without an approval pause.
         self.ask_person: AskPerson | None = None
+        #: The session's guard on a text-only model reading a turn's media files.
+        self.media_guard: TextOnlyMediaGuard | None = None
 
     @property
     def permission_evaluator(self) -> PermissionEvaluator:
@@ -133,4 +136,5 @@ class ToolEventHookFactory:
             bypass_guard=self.bypass_guard,
             ask_person=self.ask_person,
             audit=self._tool_audit,
+            media_guard=self.media_guard,
         )

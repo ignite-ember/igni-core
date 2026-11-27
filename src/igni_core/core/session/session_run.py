@@ -16,7 +16,10 @@ to duplicate:
   typed calls in ``interactive_loop.py``).
 * :meth:`_run_turn` — the ``@`` mention + :class:`MediaResolver` +
   ``session.handle_message`` + :class:`RunStats` pipeline that was
-  byte-for-byte duplicated between the two coordinators.
+  byte-for-byte duplicated between the two coordinators. A text-only
+  model is told the metadata of the media files a turn names, not to
+  read them (:class:`TextOnlyMediaNotice`), and the session's media
+  guard refuses its reads of them.
 
 Concrete subclasses define their own ``run(...)`` entry point shape
 (``run()`` for the REPL, ``run(message)`` for the single-shot case).
@@ -35,6 +38,7 @@ from igni_core.core.session.schemas import MessageMedia, SessionLifecyclePayload
 from igni_core.core.utils.display_schemas import RunStats
 from igni_core.core.utils.media import MediaResolver
 from igni_core.core.utils.mentions import process_file_mentions
+from igni_core.core.utils.text_only_media import TextOnlyMediaNotice
 
 
 class SessionRun(ABC):
@@ -111,8 +115,10 @@ class SessionRun(ABC):
         """
         session = self._session
         display = session.display
+        models = session.settings.models
+        vision = models.has_vision(models.default)
 
-        message, mentioned_files = process_file_mentions(text)
+        message, mentioned_files = process_file_mentions(text, vision=vision)
         if mentioned_files:
             display.print_info(f"Referenced: {', '.join(mentioned_files)}")
 
@@ -121,6 +127,16 @@ class SessionRun(ABC):
         message, resolved_files = resolution.text, resolution.paths
         if resolved_files:
             display.print_info(f"Resolved: {', '.join(resolved_files)}")
+
+        notice = TextOnlyMediaNotice()
+        if not vision:
+            notice = TextOnlyMediaNotice.collect(
+                [*mentioned_files, *resolved_files, *resolution.attachable], session.project_dir
+            )
+            message = notice.wrap(message)
+        session.media_guard.begin_turn(notice.files)
+        if notice.files:
+            display.print_info(notice.user_notice(models.default))
 
         media = self._vision_media(resolver, resolution.attachable)
         if media is not None:

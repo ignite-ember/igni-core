@@ -324,7 +324,7 @@ to standard output as the `audit` section of a JSON log record on the
 | `tool` | The tool's function name (`run_shell_command`, `edit_file`, an MCP or extension tool's name) |
 | `status` | `success` — ran and returned; `error` — ran and failed; `blocked` — refused before it ran |
 | `details.decision` | `allow` or `deny` |
-| `details.decided_by` | What decided: `rule` (a `permissions.allow` / `ask` / `deny` rule), `mode` (the permission mode, `--read-only` included), `policy` (nothing more specific — the tool's configured level), `hook` (a `PreToolUse` hook), `extension` (an extension's `PreToolUse` hook), `person` (an approval prompt answered), `protected_path`, `blocked_command`, `bypass_guard` |
+| `details.decided_by` | What decided: `rule` (a `permissions.allow` / `ask` / `deny` rule), `mode` (the permission mode, `--read-only` included), `policy` (nothing more specific — the tool's configured level), `hook` (a `PreToolUse` hook), `extension` (an extension's `PreToolUse` hook), `person` (an approval prompt answered), `protected_path`, `blocked_command`, `bypass_guard`, `vision_disabled` (a text-only model reading a media file its turn named) |
 | `details.mode` | The permission mode the call was decided in, when igni's permission evaluator was asked (not on a sub-agent's call) |
 | `details.reason` | The permission evaluator's own reason — which rule or mode decided, or why the person was asked. Only when the evaluator was consulted |
 | `details.arg_names` | The names of the call's arguments, sorted |

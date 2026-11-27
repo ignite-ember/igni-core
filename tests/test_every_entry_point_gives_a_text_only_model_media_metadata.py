@@ -1,0 +1,290 @@
+"""Every way a turn starts tells a text-only model the media files' metadata, and guards them.
+
+Three paths build the ``<attached-files>`` block: the app's backend
+(``PromptBuilder``), ``igni -m`` and pipe mode (both ``SingleMessageRun``,
+through the turn pipeline the interactive loop shares). Each is run here
+with the same message — a Markdown file, a PNG and an MP4 — for a model
+without vision and for one with it, and each is checked for the block the
+model was sent, the line the person was shown, and the session's guard.
+"""
+
+from __future__ import annotations
+
+import io
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
+from unittest.mock import patch
+
+import pytest
+
+from igni_core.backend.prompt_builder import PromptBuilder
+from igni_core.cli.headless_run import HeadlessRun
+from igni_core.cli.invocation import CliInvocation
+from igni_core.cli.options import CliOptions
+from igni_core.core.config.model_entry import ModelRegistryEntry
+from igni_core.core.config.schemas.models import ModelsConfig
+from igni_core.core.config.settings import Settings
+from igni_core.core.hooks.text_only_media_guard import TextOnlyMediaGuard
+from igni_core.core.session.reminders import PendingReminderQueue
+from tests.session_factory import STUB_MODEL, build_session
+
+PNG = (Path(__file__).parent / "fixtures" / "media" / "seven-by-three.png").read_bytes()
+MESSAGE = "compare @shot.png @clip.mp4 @notes.md"
+HEADER = (
+    "[Vision is disabled for this model. Do not open, read, decode, OCR or otherwise "
+    "extract the content of these media files; only their metadata is available. "
+    "Tell the user you cannot see them and suggest switching to a vision-enabled model.]"
+)
+REFUSAL = "Not run: vision is disabled for this model; only the metadata below is available."
+
+
+def _files(root: Path) -> tuple[str, str]:
+    """Write the three files; the PNG's and the MP4's resolved paths."""
+    (root / "notes.md").write_text("# notes\n")
+    (root / "shot.png").write_bytes(PNG)
+    (root / "clip.mp4").write_bytes(b"\x00" * 6)
+    return str((root / "shot.png").resolve()), str((root / "clip.mp4").resolve())
+
+
+def _text_only_block(shot: str, clip: str) -> str:
+    """The block a text-only model is sent for :data:`MESSAGE`, body included."""
+    return (
+        "<attached-files>\n"
+        "[Referenced files: notes.md — read before responding]\n"
+        f"{HEADER}\n"
+        f"- shot.png (path: {shot}, type: image/png, size: 74 bytes, dimensions: 7x3 px)\n"
+        f"- clip.mp4 (path: {clip}, type: video/mp4, size: 6 bytes)\n"
+        "</attached-files>\n"
+        f"compare @{shot} @{clip} @notes.md"
+    )
+
+
+def _vision_block(shot: str, clip: str) -> str:
+    """The block a vision model is sent for :data:`MESSAGE`: as before this change."""
+    return (
+        "<attached-files>\n"
+        f"[Referenced files: {shot}, {clip}, notes.md — read before responding]\n"
+        "</attached-files>\n"
+        f"compare @{shot} @{clip} @notes.md"
+    )
+
+
+def _notice(model: str) -> str:
+    return (
+        f"Vision is disabled for {model}: only the metadata of shot.png, clip.mp4 was sent. "
+        "Switch to a vision-enabled model to let it see the content."
+    )
+
+
+# ── the app's backend ─────────────────────────────────────────────
+
+
+class _BackendSession:
+    def __init__(self, root: Path, *, vision: bool) -> None:
+        self.project_dir = root
+        self.settings = SimpleNamespace(
+            storage=SimpleNamespace(database_url=None, data_dir=root),
+            models=ModelsConfig(
+                default="minimax",
+                registry={"minimax": ModelRegistryEntry(model_id="m", vision=vision)},
+            ),
+        )
+        self.reminders = PendingReminderQueue()
+        self.learning_mgr = SimpleNamespace(inject=self._inject)
+        self.media_guard = TextOnlyMediaGuard()
+
+    async def _inject(self) -> None:
+        return None
+
+
+def _body(message: str) -> str:
+    """The message without its ``<system-context>`` header line."""
+    header, body = message.split("\n", 1)
+    assert header.startswith("<system-context>")
+    return body
+
+
+async def test_the_backend_sends_a_text_only_model_the_metadata(tmp_path: Path):
+    shot, clip = _files(tmp_path)
+    session = _BackendSession(tmp_path, vision=False)
+
+    result = await PromptBuilder(session).build(MESSAGE, None, interrupted_summary=None)  # type: ignore[arg-type]
+
+    assert _body(result.message) == _text_only_block(shot, clip)
+    assert result.media is None
+    assert [i.text for i in result.info_messages] == [
+        "Referenced: shot.png, clip.mp4, notes.md",
+        f"Resolved: {shot}, {clip}",
+        _notice("minimax"),
+    ]
+    assert [f.path for f in session.media_guard.files] == [shot, clip]
+
+
+async def test_the_backend_sends_a_vision_model_the_media_and_guards_nothing(tmp_path: Path):
+    shot, clip = _files(tmp_path)
+    session = _BackendSession(tmp_path, vision=True)
+    session.media_guard.begin_turn([object()])  # type: ignore[list-item]
+
+    result = await PromptBuilder(session).build(MESSAGE, None, interrupted_summary=None)  # type: ignore[arg-type]
+
+    assert _body(result.message) == _vision_block(shot, clip)
+    assert result.media is not None
+    assert [Path(str(i.filepath)).name for i in result.media.images] == ["shot.png"]
+    assert [Path(str(v.filepath)).name for v in result.media.videos] == ["clip.mp4"]
+    assert not any(i.text.startswith("Vision is disabled") for i in result.info_messages)
+    assert session.media_guard.files == [], "the last turn's files are not guarded any more"
+
+
+async def test_the_backend_leaves_a_message_without_media_as_it_was(tmp_path: Path):
+    (tmp_path / "notes.md").write_text("x")
+    session = _BackendSession(tmp_path, vision=False)
+
+    result = await PromptBuilder(session).build("read @notes.md", None, interrupted_summary=None)  # type: ignore[arg-type]
+
+    assert _body(result.message) == (
+        "<attached-files>\n[Referenced files: notes.md — read before responding]\n"
+        "</attached-files>\nread @notes.md"
+    )
+    assert [i.text for i in result.info_messages] == ["Referenced: notes.md"]
+    assert session.media_guard.files == []
+
+
+async def test_the_backend_describes_a_bare_media_name_it_resolved(tmp_path: Path):
+    shot, _ = _files(tmp_path)
+    session = _BackendSession(tmp_path, vision=False)
+
+    result = await PromptBuilder(session).build(
+        "what is in shot.png", None, interrupted_summary=None
+    )  # type: ignore[arg-type]
+
+    assert _body(result.message) == (
+        f"<attached-files>\n{HEADER}\n"
+        f"- shot.png (path: {shot}, type: image/png, size: 74 bytes, dimensions: 7x3 px)\n"
+        f"</attached-files>\nwhat is in {shot}"
+    )
+    assert [f.path for f in session.media_guard.files] == [shot]
+
+
+# ── igni -m and pipe mode ─────────────────────────────────────────
+
+
+class _Headless(HeadlessRun):
+    """The real headless runner, without the hard exit past lingering threads."""
+
+    @staticmethod
+    def _lingering_threads() -> list[Any]:
+        return []
+
+
+class _Extensions:
+    async def start(self) -> None:
+        return None
+
+    async def stop(self) -> None:
+        return None
+
+
+@pytest.fixture
+def cli_session(tmp_path: Path):
+    """A real session on a throwaway project whose turn records what the model was sent.
+
+    The turn also makes the call a looping model would — ``cat`` on the
+    image through the session's own tool hook — and keeps the answer.
+    """
+    session = build_session(tmp_path)
+    seen: dict[str, Any] = {}
+
+    async def handle_message(message: str, **kwargs: Any) -> str:
+        seen["message"], seen["kwargs"] = message, kwargs
+        seen["cat"] = await session.tool_hook_factory.create()(
+            name="run_shell_command", func=lambda **_: "PNG bytes", args={"command": "cat shot.png"}
+        )
+        return "I cannot see the image."
+
+    session.handle_message = handle_message  # type: ignore[method-assign]
+    session.seen = seen  # type: ignore[attr-defined]
+    return session
+
+
+def _use_vision(session: Any, vision: bool) -> None:
+    registry = {"stub": {**STUB_MODEL["registry"]["stub"], "vision": vision}}
+    session.settings.models = ModelsConfig(default="stub", registry=registry)
+
+
+def _run_cli(session: Any, run: Any) -> None:
+    with (
+        patch("igni_core.core.session.session_run.Session", return_value=session),
+        patch(
+            "igni_core.core.session.single_message_run.HeadlessExtensions",
+            lambda _session: _Extensions(),
+        ),
+    ):
+        run()
+
+
+class _Stdin(io.StringIO):
+    def isatty(self) -> bool:
+        return False
+
+
+def _dash_m(session: Any) -> None:
+    invocation = CliInvocation(CliOptions(message=MESSAGE), Settings(), _Headless())
+    _run_cli(session, lambda: invocation.run_message(MESSAGE))
+
+
+def _pipe(session: Any) -> None:
+    invocation = CliInvocation(CliOptions(pipe=True), Settings(), _Headless())
+    with patch.object(sys, "stdin", _Stdin(MESSAGE + "\n")):
+        _run_cli(session, invocation.run_pipe)
+
+
+ENTRY_POINTS = [pytest.param(_dash_m, id="igni -m"), pytest.param(_pipe, id="pipe mode")]
+
+
+@pytest.mark.parametrize("enter", ENTRY_POINTS)
+def test_a_cli_turn_sends_a_text_only_model_the_metadata_and_refuses_its_cat(
+    cli_session, capsys, enter
+):
+    _use_vision(cli_session, False)
+    shot, clip = _files(cli_session.project_dir)
+
+    enter(cli_session)
+
+    seen = cli_session.seen
+    assert seen["message"] == _text_only_block(shot, clip)
+    assert "media" not in seen["kwargs"]
+    assert seen["cat"] == (
+        f"{REFUSAL}\n- shot.png (path: {shot}, type: image/png, size: 74 bytes, dimensions: 7x3 px)"
+    )
+    assert _notice("stub") in capsys.readouterr().out.replace("\n", " ").replace("  ", " ")
+
+
+@pytest.mark.parametrize("enter", ENTRY_POINTS)
+def test_a_cli_turn_sends_a_vision_model_the_media_and_lets_its_cat_run(cli_session, capsys, enter):
+    _use_vision(cli_session, True)
+    shot, clip = _files(cli_session.project_dir)
+
+    enter(cli_session)
+
+    seen = cli_session.seen
+    assert seen["message"] == _vision_block(shot, clip)
+    media = seen["kwargs"]["media"]
+    assert [Path(str(i.filepath)).name for i in media.images] == ["shot.png"]
+    assert [Path(str(v.filepath)).name for v in media.videos] == ["clip.mp4"]
+    assert "PNG bytes" in seen["cat"] and not seen["cat"].startswith("Not run:")
+    assert "Vision is disabled" not in capsys.readouterr().out
+    assert cli_session.media_guard.files == []
+
+
+async def test_the_backend_describes_an_absolute_media_path_written_without_a_mention(
+    tmp_path: Path,
+):
+    shot, _ = _files(tmp_path)
+    session = _BackendSession(tmp_path, vision=False)
+
+    result = await PromptBuilder(session).build(f"what is {shot}", None, interrupted_summary=None)  # type: ignore[arg-type]
+
+    assert _body(result.message).startswith(f"<attached-files>\n{HEADER}\n- shot.png (path: {shot}")
+    assert [f.path for f in session.media_guard.files] == [shot]

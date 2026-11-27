@@ -29,6 +29,8 @@ Contents:
   :meth:`total` (int summary) in place of the dict-shaped idioms.
 * :class:`ResolvedText` — Pydantic model, return type of
   :meth:`MediaResolver.resolve_text_references`.
+* :class:`PixelSize` / :class:`MediaFileMetadata` — what a text-only
+  model is told about a media file instead of its content.
 """
 
 from __future__ import annotations
@@ -126,6 +128,11 @@ class MediaTaxonomy:
         """Return the spec whose extension set contains ``ext``,
         or ``None`` if no spec matches. Case-insensitive."""
         return self.by_extension.get(ext.lower())
+
+    def needs_vision(self, ext: str) -> bool:
+        """Whether ``ext`` names an image, audio or video file — what a text-only model cannot take."""
+        spec = self.classify(ext)
+        return spec is not None and spec.kind is not MediaKind.document
 
     @property
     def all_extensions(self) -> frozenset[str]:
@@ -265,6 +272,33 @@ class MediaAttachments(BaseModel):
         idiom PromptBuilder used to run after ``extract_media_urls``
         returned a dict."""
         return len(self.images) + len(self.audio) + len(self.videos) + len(self.files)
+
+
+class PixelSize(BaseModel):
+    """An image's width and height in pixels."""
+
+    width: int
+    height: int
+
+
+class MediaFileMetadata(BaseModel):
+    """What a text-only model is told about a media file: its metadata, never its content."""
+
+    name: str
+    path: str
+    kind: MediaKind
+    media_type: str
+    size_bytes: int | None = None
+    pixels: PixelSize | None = None
+
+    def describe(self) -> str:
+        """One line naming the file and each metadata field that could be read."""
+        fields = [f"path: {self.path}", f"type: {self.media_type}"]
+        if self.size_bytes is not None:
+            fields.append(f"size: {self.size_bytes} bytes")
+        if self.pixels is not None:
+            fields.append(f"dimensions: {self.pixels.width}x{self.pixels.height} px")
+        return f"- {self.name} ({', '.join(fields)})"
 
 
 class ResolvedText(BaseModel):

@@ -18,6 +18,7 @@ import pytest
 from igni_core.backend.prompt_builder import PromptBuilder
 from igni_core.core.config.model_entry import ModelRegistryEntry
 from igni_core.core.config.schemas.models import ModelsConfig
+from igni_core.core.hooks.text_only_media_guard import TextOnlyMediaGuard
 from igni_core.core.session.reminders import PendingReminderQueue
 from igni_core.core.utils.media import MediaResolver
 from igni_core.core.utils.media_schemas import MediaAttachments
@@ -35,6 +36,7 @@ class _Session:
             models=ModelsConfig(default="m", registry=registry),
         )
         self.reminders = PendingReminderQueue()
+        self.media_guard = TextOnlyMediaGuard()
         self.injected = 0
         self.learning_mgr = SimpleNamespace(inject=self._inject)
 
@@ -124,7 +126,11 @@ async def test_a_model_without_vision_gets_the_resolved_path_as_text_and_no_medi
     )
 
     assert result.media is None
-    assert _texts(result) == [f"Resolved: {shot.resolve()}"]
+    assert _texts(result) == [
+        f"Resolved: {shot.resolve()}",
+        "Vision is disabled for m: only the metadata of shot.png was sent. "
+        "Switch to a vision-enabled model to let it see the content.",
+    ]
     assert str(shot.resolve()) in result.message
 
 
@@ -157,7 +163,7 @@ async def test_several_resolved_files_are_listed_comma_joined(tmp_path: Path):
 
     result = await builder.build("one.png and two.png", None, interrupted_summary=None)
 
-    assert _texts(result) == [f"Resolved: {one.resolve()}, {two.resolve()}"]
+    assert _texts(result)[0] == f"Resolved: {one.resolve()}, {two.resolve()}"
 
 
 async def test_an_at_mention_is_announced_and_listed_for_the_agent(tmp_path: Path):
@@ -247,7 +253,8 @@ async def test_a_model_missing_from_the_registry_has_no_vision(tmp_path: Path):
 
     assert result.media is None
     assert _texts(result)[0].startswith("Resolved: ")
-    assert len(_texts(result)) == 1
+    assert _texts(result)[1].startswith("Vision is disabled for m: ")
+    assert len(_texts(result)) == 2
 
 
 class _Store:

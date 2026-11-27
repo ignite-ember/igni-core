@@ -255,7 +255,7 @@ Include file paths or bare filenames in your message — igni resolves them auto
 
 Bare filenames are searched in: project directory → `~/Downloads` → `~/Desktop` → `~/Documents` → `~`.
 
-For vision-capable models (set `vision: true` in the model registry), images and files are attached as multimodal content. For text-only models, paths are resolved so the AI can read them via tools.
+For vision-capable models (set `vision: true` in the model registry), images and files are attached as multimodal content. For text-only models, paths are resolved so the AI can read them via tools — except images, audio and video: the model is told vision is disabled and given only each file's name, path, type, size and (for PNG, JPEG, GIF and WebP) pixel size, and a shell or read call that would dump or OCR such a file is refused with the same metadata. You see a line saying the model cannot see them.
 
 Supported formats: images (`.png`, `.jpg`, `.avif`, `.heic`, `.webp`, etc.), audio (`.mp3`, `.wav`, `.ogg`, etc.), video (`.mp4`, `.mov`, `.webm`, etc.), and documents (`.pdf`).
 
