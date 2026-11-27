@@ -15,12 +15,14 @@ class MainToolSet:
     # ``find``, ``cat``); Edit/Write stay because shell rewrites (``sed -i``,
     # here-docs) are fragile, and the Grep/Glob/Read/LS toolkits overlapped
     # with the shell and confused the model (CLAUDE_CODE_PARITY.md row 22).
+    # ReadDocument reads only what the shell cannot: PDF and Office files.
     CORE: ClassVar[tuple[str, ...]] = (
         "Write",
         "Edit",
         "Bash",
         "Schedule",
         "NotebookEdit",
+        "ReadDocument",
     )
 
     def __init__(self, permissions: PermissionsConfig) -> None:

@@ -35,6 +35,7 @@ class ToolFriendlyNames:
     _NAMES: ClassVar[Mapping[str, str]] = MappingProxyType(
         {
             "read_file": "Read",
+            "read_document": "ReadDocument",
             "save_file": "Write",
             "edit_file": "Edit",
             "edit_file_replace_all": "Edit",

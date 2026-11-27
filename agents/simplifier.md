@@ -1,7 +1,7 @@
 ---
 name: simplifier
 description: Simplifies and cleans up code for clarity, consistency, and maintainability while preserving exact functionality.
-tools: Edit, Bash
+tools: Edit, Bash, ReadDocument
 color: magenta
 
 tags:

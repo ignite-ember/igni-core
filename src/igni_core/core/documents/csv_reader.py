@@ -13,6 +13,7 @@ from igni_core.core.documents.markdown_table import MarkdownTable
 from igni_core.core.documents.notes import DocumentNotes
 from igni_core.core.documents.reader import DocumentReader
 from igni_core.core.documents.schemas import DocumentText
+from igni_core.core.documents.window import ReadWindow
 
 
 class CsvDocumentReader(DocumentReader):
@@ -22,17 +23,21 @@ class CsvDocumentReader(DocumentReader):
     _DELIMITERS: ClassVar[str] = ",;\t|"
     _SNIFF_CHARS: ClassVar[int] = 64 * 1024
 
-    def _read(self, path: Path, budget: ReadBudget) -> DocumentText:
+    def _read(self, path: Path, budget: ReadBudget, window: ReadWindow) -> DocumentText:
         text = self._decode(path.read_bytes())
         delimiter = self._delimiter(path, text)
         rows = csv.reader(io.StringIO(text, newline=""), delimiter=delimiter)
-        table = MarkdownTable.collect(rows, self.MAX_ROWS, budget)
+        table = MarkdownTable.collect(rows, self.MAX_ROWS, budget, window)
+        count = DocumentNotes.counted(table.total, "row")
+        if window.past(table.total) and not budget.late:
+            raise window.past_end(str(path), count)
+        body = table.render(budget)
         return DocumentText(
             path=str(path),
-            count=DocumentNotes.counted(table.total, "row"),
-            body=table.render(budget),
+            count=count,
+            body=body,
             has_text=bool(table.rows),
-            notes=budget.notes(),
+            notes=budget.notes(window.continuation(budget, table.stopped_at or window.first)),
         )
 
     @staticmethod

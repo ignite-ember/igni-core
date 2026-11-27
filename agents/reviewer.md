@@ -1,7 +1,7 @@
 ---
 name: reviewer
 description: Reviews code for bugs, security issues, performance problems, and style violations.
-tools: WebFetch, WebSearch, Bash
+tools: WebFetch, WebSearch, Bash, ReadDocument
 color: red
 
 reasoning: false

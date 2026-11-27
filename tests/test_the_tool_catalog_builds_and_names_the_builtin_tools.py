@@ -53,7 +53,7 @@ def _probe_spec(name: str = "Probe", funcs: tuple[str, ...] = (), **kw) -> ToolS
 
 
 class TestTheDefaultCatalog:
-    def test_it_holds_the_eight_built_ins_in_order(self):
+    def test_it_holds_the_nine_built_ins_in_order(self):
         names = [spec.name for spec in ToolSpecCatalog.default().specs]
 
         assert names == [
@@ -65,6 +65,7 @@ class TestTheDefaultCatalog:
             "Schedule",
             "NotebookEdit",
             "Visualize",
+            "ReadDocument",
         ]
 
     def test_it_names_no_extension_capability(self):
@@ -75,6 +76,7 @@ class TestTheDefaultCatalog:
                 "Bash",
                 "Edit",
                 "NotebookEdit",
+                "ReadDocument",
                 "Schedule",
                 "Visualize",
                 "WebFetch",
@@ -98,6 +100,7 @@ class TestTheDefaultCatalog:
             "Edit",
             "NotebookEdit",
             "Orchestrate",
+            "ReadDocument",
             "Schedule",
             "Visualize",
             "WebFetch",

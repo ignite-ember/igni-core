@@ -10,6 +10,7 @@ from igni_core.core.documents.exceptions import DocumentRefused
 from igni_core.core.documents.notes import DocumentNotes
 from igni_core.core.documents.reader import DocumentReader
 from igni_core.core.documents.schemas import DocumentText
+from igni_core.core.documents.window import ReadWindow
 
 
 class LegacyDocumentReader(DocumentReader):
@@ -18,6 +19,6 @@ class LegacyDocumentReader(DocumentReader):
     _MODERN: ClassVar[dict[str, str]] = {".xls": ".xlsx", ".doc": ".docx", ".ppt": ".pptx"}
     extensions: ClassVar[frozenset[str]] = frozenset(_MODERN)
 
-    def _read(self, path: Path, budget: ReadBudget) -> DocumentText:
+    def _read(self, path: Path, budget: ReadBudget, window: ReadWindow) -> DocumentText:
         suffix = path.suffix.lower()
         raise DocumentRefused(DocumentNotes.legacy(str(path), suffix, self._MODERN[suffix]))

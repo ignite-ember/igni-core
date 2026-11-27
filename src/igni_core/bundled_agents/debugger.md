@@ -1,7 +1,7 @@
 ---
 name: debugger
 description: Diagnoses bugs, traces errors through stack traces, reproduces failures, and finds root causes before implementing targeted fixes.
-tools: Edit, Bash
+tools: Edit, Bash, ReadDocument
 color: yellow
 reasoning: false
 reasoning_min_steps: 2

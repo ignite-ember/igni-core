@@ -1,7 +1,7 @@
 ---
 name: qa
 description: Generates tests, reviews test quality, and identifies coverage gaps.
-tools: Write, Edit, Bash
+tools: Write, Edit, Bash, ReadDocument
 color: green
 
 tags:

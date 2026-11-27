@@ -69,6 +69,7 @@ class ToolNameResolver:
         "notebook_edit_cell": "NotebookEdit",
         "notebook_add_cell": "NotebookEdit",
         "notebook_remove_cell": "NotebookEdit",
+        "read_document": "ReadDocument",
     }
 
     def resolve(self, tool_name: str | None = None, func_name: str | None = None) -> str:

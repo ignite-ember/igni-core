@@ -19,6 +19,7 @@ from igni_core.core.documents.notes import DocumentNotes
 from igni_core.core.documents.ooxml_archive import OoxmlArchive
 from igni_core.core.documents.reader import DocumentReader
 from igni_core.core.documents.schemas import DocumentText
+from igni_core.core.documents.window import ReadWindow
 
 
 class PptxDocumentReader(DocumentReader):
@@ -26,23 +27,30 @@ class PptxDocumentReader(DocumentReader):
 
     extensions: ClassVar[frozenset[str]] = frozenset({".pptx"})
 
-    def _read(self, path: Path, budget: ReadBudget) -> DocumentText:
+    def _read(self, path: Path, budget: ReadBudget, window: ReadWindow) -> DocumentText:
         OoxmlArchive.check(path, self.MAX_UNZIPPED_BYTES)
         slides = list(Presentation(str(path)).slides)
+        count = DocumentNotes.counted(len(slides), "slide")
+        if window.past(len(slides)):
+            raise window.past_end(str(path), count)
+        end = window.end(self.MAX_SLIDES, len(slides))
         parts: list[str] = []
         has_text = False
-        for n, slide in enumerate(slides[: self.MAX_SLIDES], start=1):
-            content = self._slide(slide, budget)
+        stopped = 0
+        for n in range(window.first, end + 1):
+            content = self._slide(slides[n - 1], budget)
             has_text = has_text or bool(content)
             parts.append(f"--- Slide {n} ---" + (f"\n{content}" if content else ""))
             if budget.spent:
+                stopped = n
                 break
-        notes = budget.notes()
-        if len(slides) > self.MAX_SLIDES and not budget.spent:
-            notes.append(DocumentNotes.parts_cut("Slides", self.MAX_SLIDES, len(slides)))
+        notes = budget.notes(window.continuation(budget, stopped))
+        if window.capped(self.MAX_SLIDES, len(slides)) and not budget.spent:
+            cut = DocumentNotes.parts_cut("Slides", end, len(slides))
+            notes.append(window.note(cut, window.after(end)))
         return DocumentText(
             path=str(path),
-            count=DocumentNotes.counted(len(slides), "slide"),
+            count=count,
             body="\n".join(parts),
             has_text=has_text,
             notes=notes,

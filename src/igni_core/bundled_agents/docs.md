@@ -1,7 +1,7 @@
 ---
 name: docs
 description: Maintains and updates project documentation — README, TODO, CHANGELOG, and docs/.
-tools: Write, Edit, Bash
+tools: Write, Edit, Bash, ReadDocument
 color: green
 
 tags:

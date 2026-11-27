@@ -1,7 +1,7 @@
 ---
 name: explorer
 description: Deeply analyzes existing codebase features by tracing execution paths, mapping architecture layers, and documenting dependencies. Read-only — cannot modify files.
-tools: WebFetch, WebSearch, Bash
+tools: WebFetch, WebSearch, Bash, ReadDocument
 color: yellow
 
 tags:

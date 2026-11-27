@@ -91,6 +91,9 @@ FILE_READ_TOOLS: frozenset[str] = frozenset(
         "WebFetch",
         "fetch_url",
         "fetch_json",
+        # Reads a document inside the project and changes nothing.
+        "ReadDocument",
+        "read_document",
     }
 )
 

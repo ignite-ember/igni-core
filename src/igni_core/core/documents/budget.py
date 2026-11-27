@@ -47,10 +47,12 @@ class ReadBudget(BaseModel):
         """Whether the reader should stop."""
         return self.cut or self.late
 
-    def notes(self) -> list[str]:
-        """The note for whichever cap stopped the text."""
+    def notes(self, read_on: str | None = None) -> list[str]:
+        """The note for whichever cap stopped the text, naming the part ``read_on`` when given."""
         if self.cut:
-            return [DocumentNotes.chars_cut(self.chars)]
-        if self.late:
-            return [DocumentNotes.time_cut(self.seconds)]
-        return []
+            note = DocumentNotes.chars_cut(self.chars)
+        elif self.late:
+            note = DocumentNotes.time_cut(self.seconds)
+        else:
+            return []
+        return [DocumentNotes.read_on(note, read_on) if read_on else note]

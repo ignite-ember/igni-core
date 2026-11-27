@@ -1,7 +1,7 @@
 ---
 name: editor
 description: Creates and modifies code files. The primary coding agent for implementation, bug fixes, and refactoring.
-tools: Write, Edit, Bash
+tools: Write, Edit, Bash, ReadDocument
 color: blue
 can_orchestrate: true
 

@@ -951,4 +951,5 @@ class TestMainTeamToolkit:
             "Bash",
             "Schedule",
             "NotebookEdit",
+            "ReadDocument",
         )
