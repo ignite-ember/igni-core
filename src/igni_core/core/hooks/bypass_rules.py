@@ -24,6 +24,8 @@ import shlex
 from fnmatch import fnmatch
 from pathlib import Path
 
+from igni_core.core.config.permission_eval.read_only_shell import command_segments, is_read_only
+
 #: Files that are almost never a legitimate thing for an agent to read on its
 #: own — private keys, cloud and registry credentials, auth stores. Reading one
 #: is the shape of credential theft (the first half of an exfiltration, and the
@@ -83,6 +85,49 @@ def flag_file_read(path: str) -> str | None:
     otherwise waves through — reading ``~/.ssh/id_rsa`` is not the ordinary
     read those exemptions were written for."""
     return "reads a credential or secret file" if _is_secret_file(path) else None
+
+
+#: Read-only commands that report on a file without printing what is in it.
+_METADATA_COMMANDS = frozenset(
+    {
+        "ls",
+        "stat",
+        "du",
+        "df",
+        "file",
+        "find",
+        "which",
+        "basename",
+        "dirname",
+        "realpath",
+        "readlink",
+        "pwd",
+        "whoami",
+        "uname",
+        "echo",
+        "printf",
+        "wc",
+    }
+)
+
+
+def flag_shell_read(command: str) -> str | None:
+    """:func:`flag_file_read` for a read-only shell command that prints a file's contents."""
+    segments = command_segments(command)
+    if segments is None or not all(is_read_only(part) for _joiner, part in segments):
+        return None
+    for _joiner, part in segments:
+        name, *args = shlex.split(part)
+        if name in _METADATA_COMMANDS:
+            continue
+        for arg in args:
+            path = arg.split("=", 1)[1] if arg.startswith("-") and "=" in arg else arg
+            # As a directory too: ``grep -r x ~/.ssh`` prints the keys in it.
+            for candidate in (path, f"{path.rstrip('/')}/"):
+                reason = flag_file_read(candidate)
+                if reason:
+                    return reason
+    return None
 
 
 #: (pattern, reason) for shell commands. Searched case-insensitively

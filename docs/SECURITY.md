@@ -126,7 +126,10 @@ Bypass (`--auto-approve`) still checks every non-read call before it runs:
 rules for actions that are dangerous by their shape (deleting outside the
 project, `curl | sh`, force-pushing, sending credentials off the machine…),
 then Laya, a small typed-decision model, for what no rule names. A call
-either flags is turned back into the ordinary approval prompt.
+either flags is turned back into the ordinary approval prompt. A shell
+command built only from the read-only allow-list (below) is a read: it runs
+without going to Laya, unless it prints a private key or credential file
+(`cat ~/.ssh/id_rsa`), which is asked about.
 
 Laya does not run inside the backend. It runs in **igni's decisions
 service** (`python -m igni_core.decisions_server`), which brings torch and
@@ -141,11 +144,12 @@ the model's checkpoints:
   service's `IGNI_DECISIONS_SECRET`). The service answers approvals before
   anything an extension asks, across every backend it serves.
 
-**It fails closed.** If the service cannot be started or reached, or the
-model cannot load — including an install without the `decisions` extra — the
-check cannot run, and a call that would have been checked is *asked about*,
-never let through. A headless run with nobody to ask refuses it with the
-reason.
+**Without Laya, the rules decide.** If the service cannot be started or
+reached, or the model cannot load — including an install without the
+`decisions` extra — a call a rule flags is still asked about, and anything
+else runs. The backend logs a warning once per process saying why and that
+installing `igni-core[decisions]` turns the model back on. A headless run
+with nobody to ask refuses a flagged call with the reason.
 
 #### What `--read-only` does
 
@@ -154,7 +158,8 @@ covers your files and the web:
 
 - **Runs without asking:** a shell command built entirely from the read-only
   allow-list — `cat`, `ls`, `head`, `tail`, `wc`, `rg`, `grep`, `find`
-  (without `-exec`/`-delete`), `diff`, `stat`, `jq`, `git status`/`log`/
+  (without `-exec`/`-delete`), `diff`, `stat`, `jq`, `file` (without `-C`),
+  `sed` (printing only: `sed -n '1,80p'`, never `-i`, `w` or `s///`), `git status`/`log`/
   `diff`/`show`/`blame`/`ls-files`/`grep`/`branch` (listing), and pipes
   between them. igni has no read tool, so this is how the agent reads your
   working tree. Also `web_search`, `search_news`, `fetch_url` and `fetch_json`
