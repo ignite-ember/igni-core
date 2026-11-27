@@ -60,6 +60,5 @@ class AttachedPdfText(BaseModel):
         )
         if pdf.truncated:
             pages += f"\n[Text truncated at {PdfText.MAX_CHARS} characters.]"
-        return (
-            f"[Text extracted from {pdf.path} ({pdf.page_count} pages):]\n{wrap_untrusted(pages)}"
-        )
+        count = f"{pdf.page_count} page" + ("" if pdf.page_count == 1 else "s")
+        return f"[Text extracted from {pdf.path} ({count}):]\n{wrap_untrusted(pages)}"
