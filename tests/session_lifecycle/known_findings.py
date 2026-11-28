@@ -98,6 +98,8 @@ FINDINGS: dict[str, Finding] = dict(
 )
 
 # cell id (``state.action``, or a scenario's id) -> the findings that turn it red.
+# background.two_follow_ups is absent on purpose: F07 counts its paused run once too many and
+# F08 loses one, so its total comes out right; fixing either one turns it red.
 CELLS: dict[str, tuple[str, ...]] = {
     "background.approve": ("F07",),
     "background.cancel": ("F07",),
@@ -110,7 +112,6 @@ CELLS: dict[str, tuple[str, ...]] = {
     "background.restart": ("F07",),
     "background.second_window": ("F07",),
     "background.switch_model": ("F07",),
-    "background.two_follow_ups": ("F07",),
     "cancelled.approve": ("F03",),
     "cancelled.cancel": ("F03",),
     "cancelled.cancel_twice": ("F03",),
@@ -127,7 +128,7 @@ CELLS: dict[str, tuple[str, ...]] = {
     "cancelled.two_follow_ups": ("F03",),
     "continuing.approve": ("F07",),
     "continuing.cancel": ("F04", "F07"),
-    "continuing.cancel_twice": ("F02", "F07"),
+    "continuing.cancel_twice": ("F02", "F04", "F07"),
     "continuing.deny": ("F07",),
     "continuing.deny_feedback": ("F09",),
     "continuing.follow_up": ("F07",),
@@ -148,7 +149,7 @@ CELLS: dict[str, tuple[str, ...]] = {
     "errored.reload": ("F05",),
     "errored.second_window": ("F05",),
     "errored.switch_model": ("F05",),
-    "errored.two_follow_ups": ("F05",),
+    "errored.two_follow_ups": ("F05", "F08"),
     "paused.approve": ("F07",),
     "paused.cancel": ("F02", "F04"),
     "paused.cancel_twice": ("F02", "F04"),
@@ -162,7 +163,7 @@ CELLS: dict[str, tuple[str, ...]] = {
     "paused.restart": ("F07", "F12"),
     "paused.second_window": ("F07",),
     "paused.switch_model": ("F07",),
-    "paused.two_follow_ups": ("F01", "F06"),
+    "paused.two_follow_ups": ("F01", "F06", "F08"),
     "streaming.cancel": ("F04",),
     "streaming.cancel_twice": ("F04",),
     "streaming.deny_feedback": ("F08",),
@@ -190,6 +191,8 @@ CELLS: dict[str, tuple[str, ...]] = {
     "tool.second_window": ("F07",),
     "tool.switch_model": ("F07",),
     "tool.two_follow_ups": ("F10",),
+    "idle.two_follow_ups": ("F08",),
+    "restarted.two_follow_ups": ("F08",),
     "incident.6fa3e09e": ("F01",),
     "live.paused_follow_up": ("F01",),
     "runaway.stop": ("F03",),

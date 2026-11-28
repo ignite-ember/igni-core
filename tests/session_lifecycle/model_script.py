@@ -14,7 +14,7 @@ class ModelScript:
         self, rules: list[ScriptRule] | None = None, fallback: ModelTurn | None = None
     ) -> None:
         self.rules: list[ScriptRule] = list(rules or [])
-        self.fallback = fallback or ModelTurn(text="Untitled chat")
+        self.fallback = fallback or ModelTurn(text="Untitled chat", delay_before=1.0)
 
     def add(self, when: str, *turns: ModelTurn, then: ModelTurn | None = None) -> ModelScript:
         """Answer ``turns`` in order after a user message containing ``when``."""
