@@ -75,7 +75,7 @@ def _controllers(
         return SimpleNamespace(error="")
 
     return SimpleNamespace(
-        runs=SimpleNamespace(is_processing=lambda: processing),
+        runs=SimpleNamespace(is_processing=lambda: processing, end_paused_turn=ok),
         hitl=SimpleNamespace(
             waiting_messages=lambda: [SimpleNamespace(requirements=[0] * n) for n in waiting or []]
         ),
@@ -191,10 +191,19 @@ def test_a_new_dialogue_revalidates_the_group_policy() -> None:
     assert session.on_new_dialogue is revalidate  # type: ignore[attr-defined]
 
 
+def test_leaving_a_chat_ends_the_turn_paused_there() -> None:
+    controllers = _controllers()
+    session = SimpleNamespace(project_dir=Path("."))
+
+    _server(controllers=controllers, session=session)
+
+    assert session.on_leave_dialogue is controllers.runs.end_paused_turn  # type: ignore[attr-defined]
+
+
 def test_a_server_has_no_runtime_until_one_is_attached() -> None:
     told: list[object] = []
     controllers = _Spy()
-    controllers.runs = SimpleNamespace(stream_to=told.append)
+    controllers.runs = SimpleNamespace(stream_to=told.append, end_paused_turn=None)
     server = _server(controllers=controllers)
 
     async def send(message: object) -> None:

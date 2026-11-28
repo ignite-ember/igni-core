@@ -74,6 +74,7 @@ class SessionCommand:
         # Generate new session_id so Agno starts fresh history — see
         # :meth:`Session.rotate_id` for why every component must be
         # re-bound in one step.
+        await self._leave_dialogue()
         new_id = str(uuid.uuid4())[:8]
         self._session.rotate_id(new_id)
         # The new conversation has drawn no views: the previous one's
@@ -140,6 +141,7 @@ class SessionCommand:
         first run completes).
         """
         name = args.strip() or None
+        await self._leave_dialogue()
         result = await self._session.persistence.fork(name=name)
         if result.unsaved:
             # Like /rename: a new chat has no stored row until its first
@@ -164,6 +166,12 @@ class SessionCommand:
         return CommandResult.fork(new_id)
 
     # ── Private helpers ──────────────────────────────────────────
+
+    async def _leave_dialogue(self) -> None:
+        """End a turn paused on the person in the chat being left, if anyone wired it."""
+        hook = self._session.on_leave_dialogue
+        if hook is not None:
+            await hook()
 
     async def _revalidate_group(self) -> None:
         """Ask the server whether the group changed, if anyone wired it.

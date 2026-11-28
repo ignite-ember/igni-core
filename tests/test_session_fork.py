@@ -194,6 +194,7 @@ class TestForkSlashCommand:
         session = MagicMock()
         session.session_id = "source01"
         session.session_named = True
+        session.on_leave_dialogue = None
         session.main_team = MagicMock()
         session.main_team.session_id = "source01"
         session.persistence = MagicMock()

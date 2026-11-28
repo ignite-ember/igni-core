@@ -31,6 +31,7 @@ def _make_session():
     session.skill_pool.match_user_command.return_value = None
     session.hooks_map = {}
     session.session_id = "abc12345"
+    session.on_leave_dialogue = None
     session.settings.models.default = "test-model"
     session.settings.models.registry = {"test-model": MagicMock()}
     session.settings.permissions.file_write = "ask"

@@ -330,17 +330,21 @@ class HitlController:
         many approvals were dropped."""
         return self._store.drop_waiting() + self._session.sub_agent_hitl.drop_restored()
 
-    async def abandon_waiting(self) -> int:
+    async def abandon_waiting(self) -> list[str]:
         """The person wrote again instead of answering: drop every approval, as
         :meth:`drop_waiting` does, and keep each paused run's turn in the history.
 
         Each waiting call gets the result a rejection in the dialog gives it
         (:func:`declined_note`), and the run counts as ended, so the next
         run reads the turn — its message and its work so far — before the
-        new message. Agno leaves a paused run out of the history.
+        new message. Agno leaves a paused run out of the history. Returns
+        the ids of the approvals dropped, for the windows to withdraw.
         """
+        asked = self._waiting_ids()
         runs = self._store.waiting_runs()
-        dropped = self.drop_waiting()
+        self.drop_waiting()
+        left = set(self._waiting_ids())
+        dropped = [requirement_id for requirement_id in asked if requirement_id not in left]
         db = self._session.main_team.db
         if db is None:
             return dropped
@@ -354,6 +358,10 @@ class HitlController:
             except Exception as exc:  # noqa: BLE001 — the new message still runs
                 logger.warning("The abandoned run %s stays paused: %s", run_id, exc)
         return dropped
+
+    def _waiting_ids(self) -> list[str]:
+        """The ids of every approval still waiting on the person."""
+        return [r.requirement_id for m in self.waiting_messages() for r in m.requirements]
 
     # ── What survives a reload or a restart ─────────────────────
 
