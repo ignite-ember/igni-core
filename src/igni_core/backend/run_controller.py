@@ -104,6 +104,9 @@ class RunController:
     #: many. A cancel calls it, so no later answer continues a run the
     #: person stopped (:meth:`HitlController.drop_waiting`).
     _drop_approvals: Callable[[], int] | None = None
+    #: Drops them for a new message, and keeps each paused run's turn in
+    #: the history with its calls declined (:meth:`HitlController.abandon_waiting`).
+    _abandon_approvals: Callable[[], Awaitable[int]] | None = None
     #: Sends a message to every client of the session: where the stream of
     #: a run a cancel ended paused gets its end (:meth:`stream_to`).
     _send: Callable[[msg.Message], Awaitable[None]] | None = None
@@ -118,9 +121,11 @@ class RunController:
         gate: RunGate,
         http_client_manager: ModelHttpClientManager | None = None,
         drop_approvals: Callable[[], int] | None = None,
+        abandon_approvals: Callable[[], Awaitable[int]] | None = None,
     ) -> None:
         self._session = session
         self._drop_approvals = drop_approvals
+        self._abandon_approvals = abandon_approvals
         self._message_queue = message_queue
         self._stream_factory = stream_factory
         self._supervisor = supervisor
@@ -146,6 +151,8 @@ class RunController:
         # The current run's stream ended paused for a person: the run is
         # only closing, and its answer resumes it (:meth:`continue_run`).
         self._stream_ended_paused = False
+        # A streamed turn — a new message's or a resumed one's — holds the run.
+        self._turn_working = False
         #: The chat the latest run belongs to; a resumed run is still it.
         self._run_session_id = ""
         # The tasks ``cancel_run`` cancelled, so the work they were running
@@ -190,6 +197,11 @@ class RunController:
         phase ``done``; the session is busy all the same.
         """
         return self._phase.is_active() or bool(self._run_tasks)
+
+    @property
+    def turn_in_progress(self) -> bool:
+        """A streamed turn is working — not paused on a person, nor closing a pause."""
+        return self._turn_working and not self._stream_ended_paused
 
     def _begin_run(self) -> asyncio.Task | None:
         """The current task is one of the session's runs until :meth:`_end_run`."""
@@ -265,17 +277,21 @@ class RunController:
         """
         async with self._run_lock:
             self._stream_ended_paused = False
+            self._turn_working = True
             # The chat this run is, for everything it sends while it runs.
             self._run_session_id = self._session.session_id
             # A cancelled run reaches none of ``_run_locked``'s terminal
             # transitions (``CancelledError`` is a BaseException): the run's
             # end settles the phase (:meth:`_relay`), or ``get_processing``
             # said busy for the rest of the process's life.
-            with run_session(self._run_session_id):
-                relay = self._relay(self._run_locked(text, media), self._run_tasks)
-                async with contextlib.aclosing(relay) as frames:
-                    async for proto in frames:
-                        yield proto
+            try:
+                with run_session(self._run_session_id):
+                    relay = self._relay(self._run_locked(text, media), self._run_tasks)
+                    async with contextlib.aclosing(relay) as frames:
+                        async for proto in frames:
+                            yield proto
+            finally:
+                self._turn_working = False
 
     async def continue_run(
         self, stream: AsyncIterator[msg.Message]
@@ -284,26 +300,31 @@ class RunController:
         session's run: ``cancel_run`` reaches it and ``get_processing``
         reports it, as for the run that paused.
 
-        Not under the run lock: a sub-agent's approval is answered while
-        its parent run still holds it. Then the parent is the session's
-        run already, and the stream passes through untouched.
+        Under the run lock, as every turn is: a new message waits for it
+        (or is queued into it) instead of starting a second run beside it,
+        blind to this one. Only a sub-agent's approval, answered while its
+        parent run still holds the lock, passes through: the parent is the
+        session's run already.
         """
-        if self._run_tasks and self._stream_ended_paused:
-            # The run that paused has streamed its last frame but is still
-            # closing (its checkpoint, its model client) when a quick answer
-            # arrives. It is not a parent waiting on this answer: wait for it
-            # to let go, or the resumed run passed through as a sub-agent's
-            # would, and no Stop hook saw its reply.
-            async with self._run_lock:
-                pass
-        if self._run_tasks:
+        if self._run_tasks and not self._stream_ended_paused:
             relay = self._relay(stream, self._passengers)
-        else:
-            self._transition_to(RunPhase.streaming)
-            relay = self._relay(self._continued(stream), self._run_tasks)
-        async with contextlib.aclosing(relay) as frames:
-            async for proto in frames:
-                yield proto
+            async with contextlib.aclosing(relay) as frames:
+                async for proto in frames:
+                    yield proto
+            return
+        # A run that paused may still be closing (its checkpoint, its model
+        # client) when a quick answer arrives: the lock waits for it to let go.
+        async with self._run_lock:
+            self._stream_ended_paused = False
+            self._turn_working = True
+            try:
+                self._transition_to(RunPhase.streaming)
+                relay = self._relay(self._continued(stream), self._run_tasks)
+                async with contextlib.aclosing(relay) as frames:
+                    async for proto in frames:
+                        yield proto
+            finally:
+                self._turn_working = False
 
     async def _continued(
         self, stream: AsyncIterator[msg.Message]
@@ -325,6 +346,7 @@ class RunController:
                     if isinstance(proto, msg.ContentDelta):
                         reply.append(proto.text)
                     ended = not self._paused_after(proto, not ended)
+            self._stream_ended_paused = not ended
             if ended and pending_id is not None:
                 # The run that paused has finished: its message is done.
                 self._paused_pending_id = None
@@ -400,8 +422,13 @@ class RunController:
         left waiting, answering one continued the abandoned run and ran
         its tool in the middle of the new conversation. That includes the
         ones a previous backend left, which no paused message here names.
+        Each paused run's turn stays in the history, its waiting calls
+        declined, so the new message is read after it.
         """
-        dropped = self._drop_approvals() if self._drop_approvals is not None else 0
+        if self._abandon_approvals is not None:
+            dropped = await self._abandon_approvals()
+        else:
+            dropped = self._drop_approvals() if self._drop_approvals is not None else 0
         if dropped:
             logger.info("A new message dropped %d waiting approval(s)", dropped)
         pending_id = self._paused_pending_id

@@ -9,7 +9,7 @@ on for minutes after, out of reach — every Escape answered
 
 Each test runs a real backend with only the team replaced: a run that
 works until stopped, one paused on an approval, one continuing after its
-approval, and two at once. Every one ends with ``cancelled=true``, its
+approval, and a turn that waits for a continuing run. Every one ends with ``cancelled=true``, its
 stream says it was cancelled, the team's own run is stopped, and the
 session is idle again.
 """
@@ -205,39 +205,47 @@ async def test_cancelling_a_run_continuing_after_its_approval_stops_it(project: 
     )
 
 
-async def test_a_turn_that_ended_beside_a_continuing_run_leaves_it_in_reach(
+async def test_a_turn_sent_while_a_run_continues_waits_and_the_cancel_reaches_the_run(
     project: Path,
 ) -> None:
-    """The 6fa3e09e order: the second run ends first, the resumed one goes on."""
+    """The 6fa3e09e order: a message's turn arrives while the resumed run goes
+    on. It waits for that run (never beside it, blind to it); the cancel stops
+    the resumed run, and the waiting turn runs after it."""
     team = _Team()
     backend = _backend(project, team)
     resumed = await _continuing(backend)
     second = _Stream(backend.run_message("No, search the internet for this one"))
-    await asyncio.wait_for(second.task, 5)
-    assert second.said("second")
+    for _ in range(50):
+        await asyncio.sleep(0)
+    assert not second.said("second"), "no turn starts beside the resumed run"
 
     assert backend.processing, "the resumed run still goes on"
     assert backend.activity().state is ActivityState.RUNNING
     assert await _cancel(backend) == CancelRunResult(cancelled=True)
-    await asyncio.wait_for(resumed.task, 5)
+    await asyncio.wait_for(asyncio.gather(resumed.task, second.task), 5)
 
     assert resumed.cancelled()
     assert team.stopped == ["run-1"]
+    assert second.said("second"), "the waiting turn ran once the resumed run let go"
     _idle(backend)
 
 
-async def test_cancelling_two_runs_at_once_stops_both(project: Path) -> None:
+async def test_a_cancel_stops_the_continuing_run_then_the_turn_that_waited_for_it(
+    project: Path,
+) -> None:
     team = _Team(second_waits=True)
     backend = _backend(project, team)
     resumed = await _continuing(backend)
     second = _Stream(backend.run_message("and this too"))
-    await second.until(lambda: second.said("working"))
 
     assert await _cancel(backend) == CancelRunResult(cancelled=True)
-    await asyncio.wait_for(asyncio.gather(resumed.task, second.task), 5)
+    await asyncio.wait_for(resumed.task, 5)
+    await second.until(lambda: second.said("working"))
+    assert await _cancel(backend) == CancelRunResult(cancelled=True)
+    await asyncio.wait_for(second.task, 5)
 
     assert resumed.cancelled() and second.cancelled()
-    assert sorted(team.stopped) == ["run-1", "run-2"]
+    assert team.stopped == ["run-1", "run-2"]
     _idle(backend)
 
 

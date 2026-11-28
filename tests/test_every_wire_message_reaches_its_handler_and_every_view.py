@@ -83,6 +83,9 @@ class _Runtime:
 class _Backend:
     """Records what the dispatcher asked of it; answers like the real one."""
 
+    #: No turn works when a message arrives: it starts one.
+    turn_in_progress = False
+
     def __init__(self, *, runtime: _Runtime | None = None, auto_name: str = "") -> None:
         self.runtime = runtime
         self.session_id = "s-1"
@@ -250,6 +253,26 @@ async def test_retry_clears_the_stale_pending_rows_first():
 
     assert backend.controllers.runs.pending_journal.discards == 1
     backend.runtime.spawned[0].close()
+
+
+async def test_a_message_while_a_turn_works_is_queued_for_it_and_no_run_starts():
+    backend = _Backend(runtime=_Runtime())
+    backend.turn_in_progress = True
+    backend.plan_armed = True
+    dispatcher, transport, queue, _ = _dispatcher(backend)
+
+    await dispatcher.dispatch(
+        msg.UserMessage(id="r", text="and this", client_id="tab-a", force=True)
+    )
+
+    assert queue == ["and this"], "unwrapped: the armed plan waits for a turn of its own"
+    assert backend.plan_armed is True
+    assert [c for c, _ in backend.calls if c == "run_message"] == []
+    assert backend.controllers.runs.pending_journal.discards == 0, "the working turn's row stays"
+    assert transport.sent == [
+        msg.UserMessageReceived(text="and this", client_id="tab-a", queued=True),
+        msg.StreamEnd(id="r"),
+    ], "queued, then its own request ends: the window waits for that frame"
 
 
 async def test_an_armed_plan_wraps_the_next_prompt_once():

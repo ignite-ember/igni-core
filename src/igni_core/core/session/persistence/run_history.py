@@ -18,9 +18,11 @@ from __future__ import annotations
 
 import copy
 import uuid
+from collections.abc import Callable
 from typing import Any
 
 from agno.db.base import SessionType
+from agno.models.message import Message
 from agno.run.base import RunStatus
 
 
@@ -84,6 +86,61 @@ class RunHistory:
                 await self.save_run(stored, run)
             return True
         return False
+
+    async def close_declined(
+        self,
+        session_id: str,
+        run_id: str,
+        note: Callable[[str], str],
+        *,
+        tool_role: str = "tool",
+    ) -> bool:
+        """End the stored run ``run_id``, still paused, with its waiting calls declined.
+
+        Each call with no result gets the tool message Agno writes for a
+        rejected call, ``note(tool_name)`` its content, and the run is
+        completed, so the history holds the turn. ``True`` when closed now.
+        """
+        stored = await self._db.get_session(session_id=session_id, session_type=SessionType.AGENT)
+        if stored is None:
+            return False
+        run = next((r for r in stored.runs or [] if r.run_id == run_id), None)
+        if run is None or run.status != RunStatus.paused:
+            return False
+        messages = list(run.messages or [])
+        answered = {m.tool_call_id for m in messages if m.role == tool_role and m.tool_call_id}
+        tools = {t.tool_call_id: t for t in run.tools or [] if t.tool_call_id}
+        for call in [c for m in messages if m.role == "assistant" for c in m.tool_calls or []]:
+            call_id = call.get("id")
+            if not call_id or call_id in answered:
+                continue
+            function = call.get("function") or {}
+            name = str(function.get("name") or "")
+            tool = tools.get(call_id)
+            messages.append(
+                Message(
+                    role=tool_role,
+                    content=note(name),
+                    tool_call_id=call_id,
+                    tool_name=name,
+                    tool_args=tool.tool_args if tool is not None else None,
+                    tool_call_error=True,
+                )
+            )
+            if tool is not None:
+                tool.confirmed = False
+                tool.confirmation_note = note(name)
+                tool.tool_call_error = True
+                tool.requires_confirmation = False
+        for requirement in run.requirements or []:
+            execution = requirement.tool_execution
+            if requirement.confirmation is None and execution is not None:
+                requirement.confirmation = False
+                requirement.confirmation_note = note(execution.tool_name or "")
+        run.messages = messages
+        run.status = RunStatus.completed
+        await self.save_run(stored, run)
+        return True
 
     async def _stored_run_ids(self, session_id: str) -> list[str]:
         found = await self._db.get_runs(session_id=session_id, deserialize=True)

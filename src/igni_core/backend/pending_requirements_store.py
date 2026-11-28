@@ -144,6 +144,10 @@ class PendingRequirementsStore:
         """Snapshot of currently-pending requirement ids."""
         return list(self._pending.keys())
 
+    def waiting_runs(self) -> list[str]:
+        """The runs with an approval waiting on the person, each once, in the order asked."""
+        return list(dict.fromkeys(e.run_id for e in self._pending.values() if e.run_id))
+
     def sweep_run(self, run_id: str) -> int:
         """Remove every pending entry tied to a finished run.
 

@@ -330,6 +330,31 @@ class HitlController:
         many approvals were dropped."""
         return self._store.drop_waiting() + self._session.sub_agent_hitl.drop_restored()
 
+    async def abandon_waiting(self) -> int:
+        """The person wrote again instead of answering: drop every approval, as
+        :meth:`drop_waiting` does, and keep each paused run's turn in the history.
+
+        Each waiting call gets the result a rejection in the dialog gives it
+        (:func:`declined_note`), and the run counts as ended, so the next
+        run reads the turn — its message and its work so far — before the
+        new message. Agno leaves a paused run out of the history.
+        """
+        runs = self._store.waiting_runs()
+        dropped = self.drop_waiting()
+        db = self._session.main_team.db
+        if db is None:
+            return dropped
+        history = RunHistory(db)
+        role = getattr(self._session.main_team.model, "tool_message_role", "tool")
+        for run_id in runs:
+            try:
+                await history.close_declined(
+                    self._session.session_id, run_id, declined_note, tool_role=role
+                )
+            except Exception as exc:  # noqa: BLE001 — the new message still runs
+                logger.warning("The abandoned run %s stays paused: %s", run_id, exc)
+        return dropped
+
     # ── What survives a reload or a restart ─────────────────────
 
     def waiting_messages(self) -> list[msg.RunPaused]:

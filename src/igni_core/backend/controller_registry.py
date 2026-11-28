@@ -175,6 +175,7 @@ class ControllerRegistry:
             supervisor=supervisor,
             gate=gate,
             drop_approvals=hitl.drop_waiting,
+            abandon_approvals=hitl.abandon_waiting,
         )
 
         # Context needs pending_store for the crash-survival RPC.

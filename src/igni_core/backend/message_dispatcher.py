@@ -128,6 +128,10 @@ class MessageDispatcher:
         # Send the ORIGINAL (un-wrapped) text so chat bubbles stay
         # clean — the system-context wrapper below is for the LLM
         # only, not for display.
+        # Typed check: a loosely held backend (a test double) answers with a truthy mock.
+        if self._backend.turn_in_progress is True:
+            await self._queue_typed_during_a_turn(message, req_id)
+            return
         await self._transport.send(
             msg.UserMessageReceived(text=message.text, client_id=message.client_id)
         )
@@ -149,6 +153,26 @@ class MessageDispatcher:
             )
         agent_text = self._maybe_wrap_plan_hint(message.text)
         await self._run_turn(agent_text, message.file_contents, req_id, run_id)
+
+    async def _queue_typed_during_a_turn(self, message: msg.UserMessage, req_id: str) -> None:
+        """A message sent while a turn works is queued for that turn, as a ``queue_message`` is.
+
+        The turn takes it after its next tool call; one that ends with it
+        still queued runs it next (:meth:`_run_queued`). Started beside the
+        turn, its run read a history without the turn's message or work —
+        a turn not finished is not in it — and the two raced over the
+        conversation. ``force`` is not honoured here: it discards the pending
+        messages, and the working turn's is one of them. The message's own
+        request ends here, with its ``StreamEnd``: its answer streams in the
+        working turn's, and a window waits for that frame without a timeout.
+        """
+        run_id = self._spawn_sentiment(message.text)
+        if run_id is not None:
+            run_id.set_result(None)
+        await self._on_queue_message(
+            msg.QueueMessage(text=message.text, client_id=message.client_id)
+        )
+        await self._transport.send(msg.StreamEnd(id=req_id))
 
     async def _run_turn(
         self,
