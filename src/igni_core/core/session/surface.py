@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from igni_core.core.guardrails.runner import GuardrailRunner
     from igni_core.core.hooks.executor import HookExecutor
     from igni_core.core.hooks.schemas import HookDefinition
+    from igni_core.core.hooks.text_only_media_guard import TextOnlyMediaGuard
     from igni_core.core.loop import LoopProgressStore, LoopStore
     from igni_core.core.lsp import LspServerManager
     from igni_core.core.mcp.client import MCPClientManager
@@ -106,6 +107,7 @@ class SessionSurface:
     output_style: OutputStyleSelection
     broadcast_bus: BroadcastBus
     reminders: PendingReminderQueue
+    media_guard: TextOnlyMediaGuard
     event_log_store: SessionEventLog
 
     # ── The project's own context ──────────────────────────────

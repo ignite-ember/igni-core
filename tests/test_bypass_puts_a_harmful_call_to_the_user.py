@@ -16,6 +16,7 @@ from types import SimpleNamespace
 import pytest
 
 from igni_core.core.config.schemas.safety import BypassGuardConfig
+from igni_core.core.hooks.bypass_fallback import RulesOnlyFallback
 from igni_core.core.hooks.bypass_guard import NOT_RUN, BypassGuard, Verdict
 from igni_core.core.hooks.bypass_judge import HarmJudge, HarmScore
 from igni_core.core.hooks.bypass_rules import flag_shell, flag_write
@@ -136,6 +137,7 @@ def _guard(project, *, bypass=True, ask=None, judge=None, **config):
         ask=ask,
         tool_hints=ToolHintsRegistry(),
         judge=judge or FakeJudge(),
+        fallback=RulesOnlyFallback(),
     )
 
 
@@ -242,14 +244,13 @@ class TestARejectedCallLooksRejected:
         )
         assert ask.asked == []
 
-    def test_when_it_cannot_judge_it_asks(self, project):
+    def test_when_it_cannot_judge_only_the_rules_ask(self, project):
         ask = Asker(True)
-        _run(
-            _guard(project, ask=ask, judge=FakeJudge(error=RuntimeError("no weights"))),
-            "run_shell_command",
-            command="make deploy",
-        )
-        assert ask.asked and "could not be checked" in ask.asked[0][1]
+        guard = _guard(project, ask=ask, judge=FakeJudge(error=RuntimeError("no weights")))
+        assert _run(guard, "run_shell_command", command="make deploy") is None
+        assert ask.asked == []
+        _run(guard, "run_shell_command", command="git push --force")
+        assert len(ask.asked) == 1 and "force-pushes" in ask.asked[0][1]
 
     def test_read_only_tools_are_not_checked(self, project):
         judge = FakeJudge(0.99)

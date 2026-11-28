@@ -283,7 +283,7 @@ def test_the_catalog_knows_it_by_its_function_and_its_registry_name():
 
     assert catalog.agno_to_registry["read_document"] == "ReadDocument"
     assert catalog.by_name["ReadDocument"].confirm_function_names == ("read_document",)
-    assert "ReadDocument" not in catalog.valid_ephemeral_names
+    assert "ReadDocument" in catalog.valid_ephemeral_names
     assert "ReadDocument" in catalog.registry_names_with_aliases
     assert catalog.specs[-1].name == "ReadDocument"
 

@@ -326,10 +326,11 @@ class OrchestrateTools(Toolkit):
             description: One-line description of what the agent does.
             system_prompt: Full system prompt defining the agent's behavior.
             tools: Comma-separated tool names (e.g. "Bash,Edit,Write").
-                Valid: Bash, BashOutput, Edit, NotebookEdit, Schedule,
+                Valid: Bash, BashOutput, Edit, NotebookEdit, ReadDocument, Schedule,
                 WebFetch, WebSearch, Write. Searching and reading files
                 go through Bash (``rg``, ``cat``, ``find``) — there are no
-                separate Read/Grep/Glob/LS toolkits.
+                separate Read/Grep/Glob/LS toolkits. ReadDocument reads PDF,
+                Word, Excel, PowerPoint, CSV and TSV files.
 
         Returns:
             Confirmation message with the agent name.

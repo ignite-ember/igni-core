@@ -434,8 +434,6 @@ class ReadDocumentSpec(ToolSpec):
     agno_function_names: tuple[str, ...] = ("read_document",)
     confirm_function_names: tuple[str, ...] = ("read_document",)
     toolkit_cls: type[Toolkit] = ReadDocumentTools
-    # ``create_agent``'s model-facing list of tools does not name it yet.
-    ephemeral_visible: bool = False
 
 
 class ToolSpecCatalog:

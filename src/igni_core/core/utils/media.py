@@ -167,32 +167,58 @@ class MediaResolver:
         attachable: dict[str, None] = {}
         missed: list[str] = []
 
-        # Explicit paths (~/..., ./..., /..., C:\...)
-        for match in self._file_pattern.finditer(text):
+        # Each match is rewritten where it stands. A global replace per
+        # match rewrote a name inside a path already written out, so a
+        # name matched twice came out as ``/p//p/b.png``.
+        def _explicit(match: re.Match[str]) -> str:
             raw = match.group(1)
             path = Path(raw).expanduser().resolve()
             if not path.is_file():
-                continue
-            if str(path) != raw:
-                text = text.replace(raw, str(path))
-                resolved.append(str(path))
+                return match.group(0)
             # Written out in full, it must lie in an allowed root — the
             # resolved path, so neither ``..`` nor a symlink leaves one.
             if not Path(raw).is_absolute() or self._allowed(path):
                 attachable[str(path)] = None
+            if str(path) == raw:
+                return match.group(0)
+            resolved.append(str(path))
+            return self._rewrite(match, str(path))
 
-        # Bare filenames — search common locations
-        for match in self._bare_file_pattern.finditer(text):
+        def _bare(match: re.Match[str]) -> str:
             filename = match.group(1)
             found = self._find_bare_file(filename)
-            if found:
-                text = text.replace(filename, str(found))
-                resolved.append(str(found))
-                attachable[str(found)] = None
-            else:
+            if found is None:
                 missed.append(filename)
+                return match.group(0)
+            resolved.append(str(found))
+            attachable[str(found)] = None
+            return self._rewrite(match, str(found))
+
+        # Explicit paths (~/..., ./..., /..., C:\...), then bare filenames.
+        text = self._file_pattern.sub(_explicit, text)
+        text = self._bare_file_pattern.sub(_bare, text)
 
         return ResolvedText(text=text, paths=resolved, attachable=list(attachable), missed=missed)
+
+    @staticmethod
+    def _rewrite(match: re.Match[str], path: str) -> str:
+        """The matched text with its file reference replaced by ``path``."""
+        whole = match.group(0)
+        return (
+            whole[: match.start(1) - match.start(0)] + path + whole[match.end(1) - match.start(0) :]
+        )
+
+    def locate(self, reference: str) -> str | None:
+        """The absolute path one file reference resolves to, as :meth:`resolve_text_references` finds it."""
+        explicit = self._file_pattern.fullmatch(reference)
+        if explicit is not None:
+            path = Path(explicit.group(1)).expanduser().resolve()
+            return str(path) if path.is_file() else None
+        bare = self._bare_file_pattern.fullmatch(reference)
+        if bare is not None:
+            found = self._find_bare_file(bare.group(1))
+            return str(found) if found is not None else None
+        return None
 
     # ── Media attachment (vision models) ──────────────────────────────
 
@@ -215,6 +241,7 @@ class MediaResolver:
             if spec is None:
                 continue
             attachments.add(spec.bucket, spec.build(filepath=p))
+            attachments.local_paths.append(path_str)
 
         if attachments.is_empty():
             return None

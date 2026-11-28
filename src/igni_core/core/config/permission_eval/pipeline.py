@@ -57,7 +57,8 @@ _READ_ONLY_SHELL_REASON = (
     "this session is read-only (--read-only): only read-only shell commands run "
     "(cat, ls, rg, grep, find, head, wc, git log/diff/show/status, …), and this "
     "one could write, delete, run another program or reach the network. Read "
-    "files with those commands and the web with web_search/fetch_url; for "
+    "files with those commands, documents (PDF, Word, Excel, PowerPoint, CSV, "
+    "TSV) with read_document, and the web with web_search/fetch_url; for "
     "anything else, say what you would run and why "
     "rather than retrying."
 )

@@ -21,6 +21,7 @@ import pytest
 
 from igni_core.core.config.permission_eval import PermissionDecision
 from igni_core.core.config.permission_eval.schemas import PermissionMode
+from igni_core.core.hooks.bypass_judge import HarmScore
 from igni_core.core.mcp.hints import ToolHints, ToolHintsRegistry
 from tests.session_factory import build_session
 
@@ -31,17 +32,17 @@ HINTED = "mcp_ext:test.a_local_read"
 UNHINTED = "mcp_ext:test.a_tool_nobody_described"
 
 
-class RefusesToJudge:
-    """A judge that cannot answer.
+class FlagsEverything:
+    """A judge that flags every call it is asked about.
 
     Bypass's last check asks the model about a call it cannot decide by
-    rules. With a judge that cannot answer, such a call is put to the
-    person — so the guard's own answer is observable, and the test does
-    not wait on a model.
+    rules. With a judge that flags it, such a call is put to the person —
+    so the guard's own answer is observable, and the test does not wait
+    on a model.
     """
 
-    async def score(self, text: str):
-        raise RuntimeError("no model to judge with")
+    async def score(self, text: str) -> HarmScore:
+        return HarmScore(probability=1.0, question="destructive")
 
 
 @pytest.fixture
@@ -53,7 +54,7 @@ def table() -> ToolHintsRegistry:
 
 @pytest.fixture
 def session(tmp_path: Path, table: ToolHintsRegistry, monkeypatch):
-    monkeypatch.setattr("igni_core.core.hooks.bypass_guard.HarmJudge", RefusesToJudge)
+    monkeypatch.setattr("igni_core.core.hooks.bypass_guard.HarmJudge", FlagsEverything)
     return build_session(tmp_path, tool_hints=table)
 
 

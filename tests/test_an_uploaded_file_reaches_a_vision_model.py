@@ -35,6 +35,7 @@ from igni_core.backend.service_item_desk import PoolChatDesk
 from igni_core.core.config.model_entry import ModelRegistryEntry
 from igni_core.core.config.schemas.models import ModelsConfig
 from igni_core.core.db.urls import DatabaseUrl
+from igni_core.core.hooks.text_only_media_guard import TextOnlyMediaGuard
 from igni_core.core.session.reminders import PendingReminderQueue
 from igni_core.core.utils.media import MediaResolver
 from tests.service_item_rig import Desk, Files, Inbox, message
@@ -111,6 +112,7 @@ class Workspace:
             ),
             learning_mgr=SimpleNamespace(inject=self._nothing_learned),
             reminders=PendingReminderQueue(),
+            media_guard=TextOnlyMediaGuard(),
         )
         self.endpoint = RecordedRequests()
 

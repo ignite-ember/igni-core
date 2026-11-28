@@ -24,6 +24,7 @@ from igni_core.core.session.agent_factory import (
     create_reasoning_tools,
 )
 from igni_core.core.session.compression import MeasuredCompression
+from igni_core.core.session.session_metrics_once import SessionMetricsOnce
 from igni_core.core.skills.loader import SkillPool
 from igni_core.core.tools.orchestrate import OrchestrateTools
 from igni_core.core.tools.orchestrate_budget import SpawnBudget
@@ -100,6 +101,7 @@ class AgentsBuilder:
 
     def build_main_team(self) -> None:
         """The main team — the agent the session talks to."""
+        SessionMetricsOnce.install()
         session = self._session
         session.main_team = MainAgentBuilder(
             session,
