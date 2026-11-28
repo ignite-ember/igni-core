@@ -49,6 +49,7 @@ from igni_core.core.hooks.permission.context import ToolCallContext
 from igni_core.core.hooks.permission.evaluator_stage import AskPerson
 from igni_core.core.hooks.permission.pipeline import PermissionPipeline
 from igni_core.core.hooks.rules_suffixer import RulesSuffixer
+from igni_core.core.hooks.text_only_media_guard import TextOnlyMediaGuard
 from igni_core.core.hooks.tool_audit_hook import UNANSWERED, unanswered
 from igni_core.core.hooks.tool_call_invoker import ToolCallInvoker
 from igni_core.core.observability.runtime import OtelRuntime
@@ -86,6 +87,7 @@ class ToolEventHook:
         bypass_guard: BypassGuard | None = None,
         ask_person: AskPerson | None = None,
         audit: ToolAudit | None = None,
+        media_guard: TextOnlyMediaGuard | None = None,
     ):
         # Agno's ``aexecute`` checks ``inspect.iscoroutinefunction``
         # — mark this callable-instance so the async path is used.
@@ -102,6 +104,7 @@ class ToolEventHook:
             permission_evaluator=permission_evaluator,
             bypass_guard=bypass_guard,
             ask_person=ask_person,
+            media_guard=media_guard,
         )
         self._invoker = ToolCallInvoker(firer)
         self._suffixer = RulesSuffixer(

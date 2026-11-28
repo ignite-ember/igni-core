@@ -85,8 +85,9 @@ def _controller() -> RunController:
     controller._paused_pending_id = None
     controller._stream_ended_paused = False
     controller._run_session_id = ""
-    controller._cancelled_by_person = None
-    controller._current_run_task = None
+    controller._run_tasks = set()
+    controller._passengers = set()
+    controller._cancelled_by_person = set()
     controller._run_lock = asyncio.Lock()
     controller._supervisor = SimpleNamespace(cancel_foreground=lambda: False)
     controller._session = SimpleNamespace(
@@ -121,13 +122,37 @@ async def test_a_resumed_run_is_the_session_s_run_and_cancel_reaches_it() -> Non
     assert [type(m) for m in got] == [msg.ContentDelta, msg.Info]
     assert got[-1].text == "Run cancelled by user."
     assert not controller._phase.is_active()
-    assert controller._current_run_task is None
+    assert controller._run_tasks == set()
+
+
+async def test_a_run_nobody_reads_any_more_is_stopped() -> None:
+    """The task sending the run to the windows went away (a shutdown, a
+    closed stream): the run, in a task of its own, must not go on alone."""
+    controller = _controller()
+    stopped = asyncio.Event()
+
+    async def resumed_run() -> AsyncIterator[msg.Message]:
+        yield msg.ContentDelta(text="resumed")
+        try:
+            await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            stopped.set()
+            raise
+        yield msg.ContentDelta(text="never")
+
+    frames = controller.continue_run(resumed_run())
+    assert isinstance(await anext(frames), msg.ContentDelta)
+    await frames.aclose()
+
+    await asyncio.wait_for(stopped.wait(), 2)
+    assert controller._run_tasks == set()
+    assert not controller.is_processing()
 
 
 async def test_a_sub_agent_s_resume_inside_a_running_turn_passes_through() -> None:
     controller = _controller()
     parent = asyncio.current_task()
-    controller._current_run_task = parent
+    controller._run_tasks = {parent}
 
     async def resumed_run() -> AsyncIterator[msg.Message]:
         yield msg.ContentDelta(text="sub-agent resumed")
@@ -135,7 +160,37 @@ async def test_a_sub_agent_s_resume_inside_a_running_turn_passes_through() -> No
     got = [m async for m in controller.continue_run(resumed_run())]
 
     assert len(got) == 1
-    assert controller._current_run_task is parent
+    assert controller._run_tasks == {parent}
+
+
+async def test_a_resume_passing_through_a_running_turn_is_cancelled_with_it() -> None:
+    controller = _controller()
+    turn = asyncio.create_task(asyncio.sleep(3600))
+    controller._run_tasks = {turn}
+    resumed = asyncio.Event()
+
+    async def resumed_run() -> AsyncIterator[msg.Message]:
+        yield msg.ContentDelta(text="sub-agent resumed")
+        resumed.set()
+        await asyncio.sleep(3600)
+        yield msg.ContentDelta(text="never")
+
+    got: list[msg.Message] = []
+
+    async def consume() -> None:
+        async for proto in controller.continue_run(resumed_run()):
+            got.append(proto)
+
+    consumer = asyncio.create_task(consume())
+    await _first_of(resumed.wait(), consumer)
+
+    assert controller.cancel_run() is True
+    await asyncio.wait_for(consumer, 2)
+    await asyncio.gather(turn, return_exceptions=True)
+
+    assert [type(m) for m in got] == [msg.ContentDelta, msg.Info]
+    assert turn.cancelled()
+    assert controller._passengers == set()
 
 
 async def test_a_scheduled_task_run_now_is_the_session_s_run() -> None:
