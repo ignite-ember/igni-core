@@ -33,6 +33,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from igni_core.core.documents.registry import DocumentReaders
 from igni_core.core.utils.attachment_store import Attachments
 from igni_core.core.utils.media_schemas import (
     MediaAttachments,
@@ -78,6 +79,7 @@ class MediaResolver:
         taxonomy: MediaTaxonomy | None = None,
         search_dirs: tuple[Path, ...] | None = None,
         allowed_roots: tuple[Path, ...] | None = None,
+        document_extensions: frozenset[str] | None = None,
     ) -> None:
         self._project_dir = project_dir
         self._taxonomy = taxonomy or MediaTaxonomy.default()
@@ -90,6 +92,11 @@ class MediaResolver:
         # (without the dot). Compiled per instance so a custom
         # taxonomy in a test surfaces the right alt set.
         ext_alt = "|".join(ext.lstrip(".") for ext in sorted(self._taxonomy.all_extensions))
+        if document_extensions is None:
+            document_extensions = DocumentReaders.default().extensions
+        # A document is found and attached like media, and read as text.
+        file_exts = self._taxonomy.all_extensions | document_extensions
+        file_alt = "|".join(ext.lstrip(".") for ext in sorted(file_exts))
         # ``(?![.\w])`` after the extension: the URL ends *at* the
         # extension. Without it ``photo.tiff`` matched as ``photo.tif``
         # (the shorter extension first) and ``page.png.html`` matched
@@ -103,13 +110,13 @@ class MediaResolver:
         # whitespace around a path is looked at, not consumed, so two
         # side by side (``@/a.png @/b.png``) are both found.
         self._file_pattern = re.compile(
-            rf"(?:^|(?<=\s))@?((?:[~/.]|\w:)[^\s]*\.(?:{ext_alt}))(?=\s|$)",
+            rf"(?:^|(?<=\s))@?((?:[~/.]|\w:)[^\s]*\.(?:{file_alt}))(?=\s|$)",
             re.IGNORECASE,
         )
         # Bare filenames without a path prefix ("photo.avif", "report.pdf"),
         # optionally as an ``@`` mention.
         self._bare_file_pattern = re.compile(
-            rf"(?:^|(?<=\s))@?([^\s/~.@][^\s]*\.(?:{ext_alt}))(?=\s|$)",
+            rf"(?:^|(?<=\s))@?([^\s/~.@][^\s]*\.(?:{file_alt}))(?=\s|$)",
             re.IGNORECASE,
         )
 
