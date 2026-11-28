@@ -15,6 +15,8 @@ from igni_core.core.hooks.permission.outcome import AllowSkip, Block, Continue, 
 from igni_core.core.hooks.permission.pre_tool_use_stage import PreToolUseHookStage
 from igni_core.core.hooks.permission.protected_path_stage import ProtectedPathStage
 from igni_core.core.hooks.permission.stage import PermissionStage
+from igni_core.core.hooks.permission.vision_disabled_stage import VisionDisabledStage
+from igni_core.core.hooks.text_only_media_guard import TextOnlyMediaGuard
 from igni_core.core.utils.tool_audit import DecidedBy
 
 
@@ -37,15 +39,18 @@ class PermissionPipeline:
         permission_evaluator: PermissionEvaluator | None,
         bypass_guard: BypassGuard | None = None,
         ask_person: AskPerson | None = None,
+        media_guard: TextOnlyMediaGuard | None = None,
     ) -> PermissionPipeline:
-        """The CC-compatible order: hooks, the safety lists, the evaluator,
-        and in Bypass the guard."""
+        """The CC-compatible order: hooks, the safety lists, a text-only
+        model's media reads, the evaluator, and in Bypass the guard."""
         stages: list[PermissionStage] = [
             PreToolUseHookStage(firer),
             ProtectedPathStage(protected_paths),
             BlockedCommandStage(blocked_commands),
-            PermissionEvaluatorStage(permission_evaluator, firer, ask_person),
         ]
+        if media_guard is not None:
+            stages.append(VisionDisabledStage(media_guard))
+        stages.append(PermissionEvaluatorStage(permission_evaluator, firer, ask_person))
         if bypass_guard is not None:
             stages.append(BypassGuardStage(bypass_guard))
         return cls(stages)

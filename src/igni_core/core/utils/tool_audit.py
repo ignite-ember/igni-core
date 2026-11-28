@@ -57,6 +57,8 @@ class DecidedBy(StrEnum):
     BLOCKED_COMMAND = "blocked_command"
     #: Bypass mode's last check (``safety.bypass_guard``).
     BYPASS_GUARD = "bypass_guard"
+    #: A text-only model reading a media file its turn named.
+    VISION_DISABLED = "vision_disabled"
 
     @classmethod
     def of_policy(cls, source: str) -> DecidedBy:

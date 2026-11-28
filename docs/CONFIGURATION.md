@@ -221,7 +221,7 @@ There are three providers:
 | `api_key_env` | string | no | Environment variable name containing the API key |
 | `api_key_cmd` | string | no | Shell command that outputs the API key (e.g., `op read ...` for 1Password) |
 | `context_window` | int | no | Context window size in tokens. Falls back to 128k if not set |
-| `vision` | bool | no | Whether the model supports image input. Default `false`. When `true`, file references (images, PDFs) are attached as multimodal content. When `false`, file paths are resolved so the AI can read them via tools |
+| `vision` | bool | no | Whether the model supports image input. Default `false`. When `true`, file references (images, PDFs) are attached as multimodal content, and the model is told the attached images, audio and video are already visible to it; one that could not be attached is described by its metadata and the model is told it was not attached. When `false`, file paths are resolved so the AI can read them via tools; images, audio and video are described by their metadata only (name, path, type, size, pixel size) and the model is told not to read their content |
 | `temperature` | float | no | Default temperature for this model. Not sent for `anthropic` |
 | `max_tokens` | int | no | Default max output tokens |
 | `timeout` | int | no | Request timeout in seconds. Default 60 |
@@ -892,8 +892,8 @@ the local Hugging Face cache. On a machine that can reach huggingface.co, run
 `/tmp/laya/hub/models--convaiinnovations--laya` into the target machine's
 cache (`~/.cache/huggingface/hub` by default), or set `HF_HOME` or
 `HF_HUB_CACHE` to a local copy for the decisions service. A missing or
-incomplete copy is refused with a message saying this; Bypass mode then asks
-rather than allows.
+incomplete copy is refused with a message saying this; Bypass mode then
+falls back to its rules alone and logs why, once.
 
 ## OpenTelemetry
 

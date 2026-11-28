@@ -26,11 +26,15 @@ look-alikes such as ``rm -rf ./build``): the rules caught 19/20 with no
 false alarm; Laya alone separated them at AUC ~0.87–0.89. Together at
 0.75 they caught 20/20 and asked about 2/20 harmless calls.
 
-**Failing closed.** A check that cannot run — model not loadable, an
-error mid-inference — asks rather than allows: a last line of defence
-that quietly lets everything through when it breaks is not one. A call
-that needs a yes when nobody can give one (headless ``-p``, CI) is
-refused with the reason, never left waiting.
+**Read-only commands run.** A shell command built only from read-only
+commands (:mod:`~igni_core.core.config.permission_eval.read_only_shell`)
+is not put to Laya; one that prints a secret file is still asked about.
+
+**When Laya cannot judge,** the rules alone decide: a rule match asks,
+anything else runs, and the process warns once why and how to fix it
+(:mod:`~igni_core.core.hooks.bypass_fallback`). A call that needs a yes
+when nobody can give one (headless ``-p``, CI) is refused with the
+reason, never left waiting.
 
 Only Bypass is checked. Every other mode already asks for anything not
 explicitly allowed, so this would add latency and no protection.
@@ -47,6 +51,7 @@ from pydantic import BaseModel
 
 from igni_core.core.config.schemas.safety import BypassGuardConfig
 from igni_core.core.hooks.bypass_explainer import CallExplainer
+from igni_core.core.hooks.bypass_fallback import RulesOnlyFallback, process_fallback
 from igni_core.core.hooks.bypass_judge import HarmJudge
 from igni_core.core.hooks.bypass_tool_kind import ToolKind
 from igni_core.core.mcp.hints import ToolHintsRegistry
@@ -57,9 +62,6 @@ logger = logging.getLogger(__name__)
 #: on the tool card. ``protocol/tool_error_conventions.py`` recognises it
 #: to show the card as rejected; a test pins the two together.
 NOT_RUN = "Not run:"
-
-#: The reason when Laya could not run; the call is asked about, not let through.
-_UNCHECKED = "could not be checked for safety"
 
 #: Tools that only read or report. Everything else is checked — an
 #: unfamiliar tool (an MCP server's, a plugin's) is checked, not trusted.
@@ -133,8 +135,6 @@ class Verdict(BaseModel):
         """
         if self.scored:
             basis = f"the safety model rated it {self.score:.2f} of 1 ({self.reason})"
-        elif self.reason == _UNCHECKED:
-            basis = "the call could not be checked for safety"
         else:
             basis = f"a safety rule matched ({self.reason})"
         sentence = sentence if sentence.endswith((".", "!", "?")) else f"{sentence}."
@@ -176,6 +176,7 @@ class BypassGuard:
         tool_hints: ToolHintsRegistry,
         judge: HarmJudge | None = None,
         explainer: CallExplainer | None = None,
+        fallback: RulesOnlyFallback = process_fallback,
     ) -> None:
         self._config = config
         self._tool_hints = tool_hints
@@ -183,6 +184,7 @@ class BypassGuard:
         self._in_bypass = in_bypass
         self._ask = ask
         self._explainer = explainer
+        self._fallback = fallback
         self._judge = judge if judge is not None else (HarmJudge() if config.use_model else None)
 
     async def check(
@@ -196,14 +198,9 @@ class BypassGuard:
         kind = ToolKind.of(tool_name)
         # A read of a secret path is checked even though the tool is read-only:
         # reading ~/.ssh/id_rsa is not the ordinary read that exemption is for.
-        secret = kind.secret_read(args)
-        if secret is None and tool_name in READ_ONLY_TOOLS:
+        if tool_name in READ_ONLY_TOOLS and kind.secret_read(args) is None:
             return None
-        verdict = (
-            Verdict(needs_approval=True, reason=secret)
-            if secret
-            else await self.verdict(tool_name, args)
-        )
+        verdict = await self.verdict(tool_name, args)
         if not verdict.needs_approval:
             return None
 
@@ -256,20 +253,19 @@ class BypassGuard:
         return described
 
     async def verdict(self, tool_name: str, args: dict[str, Any]) -> Verdict:
-        """Rules first; Laya for what no rule names; ask on any failure to judge."""
+        """Rules, then a secret read; read-only commands run; Laya for the rest, or the rules alone."""
         kind = ToolKind.of(tool_name)
-        rule = kind.rule(args, self._project_dir)
-        if rule:
-            return Verdict(needs_approval=True, reason=rule)
-        if self._judge is None:
+        flagged = kind.rule(args, self._project_dir) or kind.secret_read(args)
+        if flagged:
+            return Verdict(needs_approval=True, reason=flagged)
+        if self._judge is None or kind.reads_only(args):
             return Verdict(needs_approval=False)
         try:
             harm = await self._judge.score(kind.describe(tool_name, args))
-        except Exception as exc:  # noqa: BLE001 — fail closed, whatever went wrong
-            logger.warning(
-                "bypass guard: could not judge %s (%s); asking", tool_name, type(exc).__name__
-            )
-            return Verdict(needs_approval=True, reason=_UNCHECKED)
+        except Exception as exc:  # noqa: BLE001 — whatever went wrong, the rules have spoken
+            logger.debug("bypass guard: could not judge %s (%s)", tool_name, type(exc).__name__)
+            self._fallback.note(exc)
+            return Verdict(needs_approval=False)
         if harm.probability >= self._config.threshold:
             return Verdict(
                 needs_approval=True, reason=harm.reason, score=harm.probability, judged=True

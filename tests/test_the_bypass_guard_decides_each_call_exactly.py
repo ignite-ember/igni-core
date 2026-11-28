@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from igni_core.core.config.schemas.safety import BypassGuardConfig
+from igni_core.core.hooks.bypass_fallback import RulesOnlyFallback
 from igni_core.core.hooks.bypass_guard import NOT_RUN, READ_ONLY_TOOLS, BypassGuard, Verdict
 from igni_core.core.hooks.bypass_judge import HarmJudge, HarmScore
 from igni_core.core.hooks.bypass_tool_kind import ToolKind
@@ -67,6 +68,7 @@ def _guard(project, *, ask=None, judge=None, hints=None, explainer=None, bypass=
         tool_hints=hints or ToolHintsRegistry(),
         judge=judge,
         explainer=explainer,
+        fallback=RulesOnlyFallback(),
     )
 
 
@@ -134,21 +136,18 @@ def test_with_the_model_on_and_no_judge_given_the_guard_builds_the_real_one(proj
     assert isinstance(_guard(project)._judge, HarmJudge)
 
 
-def test_a_judge_that_fails_asks_and_names_the_failure_to_the_person(project) -> None:
+def test_a_judge_that_fails_lets_a_call_no_rule_names_run(project) -> None:
     ask = Asker(True)
     guard = _guard(project, ask=ask, judge=Judge(error=RuntimeError("model not loaded")))
     assert _check(guard, "mystery_tool") is None
-    assert ask.asked[0]["reason"] == (
-        "This call could not be checked for safety. Bypass mode skips approvals, but the "
-        "safety check stops here so you decide."
-    )
+    assert ask.asked == []
 
 
-def test_a_judge_that_fails_with_nobody_to_ask_refuses_the_call(project) -> None:
+def test_a_judge_that_fails_still_asks_about_a_rule_match(project) -> None:
     guard = _guard(project, ask=None, judge=Judge(error=ValueError("boom")))
-    assert _check(guard, "mystery_tool") == (
-        f"{NOT_RUN} this call needed the user's approval because it could not be checked "
-        "for safety, and nobody was available to give it."
+    assert _check(guard, "run_shell_command", {"command": "git push -f"}) == (
+        f"{NOT_RUN} this call needed the user's approval because it force-pushes, rewriting "
+        "shared history, and nobody was available to give it."
     )
 
 
@@ -399,10 +398,6 @@ def test_explained_says_what_the_basis_was() -> None:
     assert model.explained("Wipes it") == (
         "Wipes it. Bypass paused here because the safety model rated it 0.80 of 1 "
         "(might delete or overwrite data)."
-    )
-    unchecked = Verdict(needs_approval=True, reason="could not be checked for safety")
-    assert unchecked.explained("Runs it") == (
-        "Runs it. Bypass paused here because the call could not be checked for safety."
     )
 
 

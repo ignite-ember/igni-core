@@ -103,6 +103,7 @@ class PluginBuilder:
             tool_hints=session.tool_hints,
         )
         factory.ask_person = session.approval.ask
+        factory.media_guard = session.media_guard
         session.tool_hook_factory = factory
         session.permission_evaluator = factory.permission_evaluator
 
