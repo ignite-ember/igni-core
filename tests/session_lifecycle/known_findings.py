@@ -78,6 +78,7 @@ FINDINGS: dict[str, Finding] = {
             "F18",
             "a message sent while a turn works is taken into it, but its own stream never ends",
             "stream-ends",
+            racy=True,
         ),
         Finding.of("F15", "nothing ends a turn whose model keeps calling tools", "bounded-run"),
         Finding.of(
