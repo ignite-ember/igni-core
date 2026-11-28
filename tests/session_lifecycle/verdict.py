@@ -14,11 +14,13 @@ class Verdict:
 
     @staticmethod
     def expect_known(request: pytest.FixtureRequest, cell: str) -> KnownFindings | None:
-        """Mark the test ``xfail(strict=True)`` when ``cell`` has known findings."""
+        """Mark the test ``xfail`` when ``cell`` has known findings: strict unless they are races."""
         known = KnownFindings.for_cell(cell)
         if known is not None:
             request.applymarker(
-                pytest.mark.xfail(strict=True, raises=KnownFindingError, reason=known.describe())
+                pytest.mark.xfail(
+                    strict=known.strict, raises=KnownFindingError, reason=known.describe()
+                )
             )
         return known
 

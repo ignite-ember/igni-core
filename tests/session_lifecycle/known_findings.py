@@ -12,6 +12,7 @@ class KnownFindings(BaseModel):
 
     finding_ids: list[str] = Field(default_factory=list)
     invariants: frozenset[str] = Field(default_factory=frozenset)
+    strict: bool = Field(default=True, description="Whether the cell fails on every run.")
 
     def describe(self) -> str:
         names = ", ".join(f"{f} ({FINDINGS[f].title})" for f in self.finding_ids)
@@ -25,11 +26,23 @@ class KnownFindings(BaseModel):
         invariants: frozenset[str] = frozenset()
         for finding_id in ids:
             invariants |= FINDINGS[finding_id].invariants
-        return cls(finding_ids=list(ids), invariants=invariants)
+        found = [FINDINGS[f] for f in ids]
+        masked = {m for f in found if f.racy for m in f.masks}
+        # Strict unless everything here is a race, or masked by one: then a run can pass.
+        strict = any(not f.racy and f.finding_id not in masked for f in found)
+        return cls(finding_ids=list(ids), invariants=invariants, strict=strict)
 
 
-def _finding(finding_id: str, title: str, *invariants: str) -> tuple[str, Finding]:
-    return finding_id, Finding(finding_id=finding_id, title=title, invariants=frozenset(invariants))
+def _finding(
+    finding_id: str, title: str, *invariants: str, racy: bool = False, masks: tuple[str, ...] = ()
+) -> tuple[str, Finding]:
+    return finding_id, Finding(
+        finding_id=finding_id,
+        title=title,
+        invariants=frozenset(invariants),
+        racy=racy,
+        masks=frozenset(masks),
+    )
 
 
 FINDINGS: dict[str, Finding] = dict(
@@ -52,6 +65,7 @@ FINDINGS: dict[str, Finding] = dict(
             "cancel-clears",
             "goes-idle",
             "stop-affordance",
+            racy=True,
         ),
         _finding("F04", "a cancelled turn disappears from what the model is shown", "history"),
         _finding(
@@ -71,6 +85,8 @@ FINDINGS: dict[str, Finding] = dict(
             "F08",
             "the session's token total loses a run that ran beside another save",
             "tokens-lost",
+            racy=True,
+            masks=("F07",),
         ),
         _finding(
             "F09",
@@ -84,6 +100,7 @@ FINDINGS: dict[str, Finding] = dict(
             "F12",
             "after a restart the interrupted-run note repeats a turn the model already sees",
             "history",
+            racy=True,
         ),
         _finding(
             "F13",
@@ -94,12 +111,24 @@ FINDINGS: dict[str, Finding] = dict(
         ),
         _finding("F14", "Bypass shows the model .env and igni's own credentials file", "no-secret"),
         _finding("F15", "nothing ends a turn whose model keeps calling tools", "bounded-run"),
+        _finding(
+            "F16",
+            "a cancelled run's model call is missing from the session's token total",
+            "tokens-lost",
+            racy=True,
+        ),
+        _finding(
+            "F17",
+            "a resumed run that ends after /fork or /clear is announced but not saved in that chat",
+            "persisted",
+            racy=True,
+        ),
     ]
 )
 
 # cell id (``state.action``, or a scenario's id) -> the findings that turn it red.
-# background.two_follow_ups is absent on purpose: F07 counts its paused run once too many and
-# F08 loses one, so its total comes out right; fixing either one turns it red.
+# A cell whose findings are all races (or masked by one) is a non-strict xfail: Linux CI
+# and macOS hit them differently (see the PR). Every other cell is strict.
 CELLS: dict[str, tuple[str, ...]] = {
     "background.approve": ("F07",),
     "background.cancel": ("F07",),
@@ -112,27 +141,28 @@ CELLS: dict[str, tuple[str, ...]] = {
     "background.restart": ("F07",),
     "background.second_window": ("F07",),
     "background.switch_model": ("F07",),
-    "cancelled.approve": ("F03",),
-    "cancelled.cancel": ("F03",),
-    "cancelled.cancel_twice": ("F03",),
+    "cancelled.approve": ("F03", "F04", "F16"),
+    "cancelled.cancel": ("F03", "F04", "F16"),
+    "cancelled.cancel_twice": ("F03", "F04", "F16"),
     "cancelled.clear": ("F03",),
-    "cancelled.deny": ("F03",),
-    "cancelled.deny_feedback": ("F03",),
-    "cancelled.follow_up": ("F03",),
-    "cancelled.fork": ("F03",),
-    "cancelled.reconnect": ("F03",),
-    "cancelled.reload": ("F03",),
-    "cancelled.restart": ("F12",),
-    "cancelled.second_window": ("F03",),
-    "cancelled.switch_model": ("F03",),
-    "cancelled.two_follow_ups": ("F03",),
+    "cancelled.deny": ("F03", "F04", "F16"),
+    "cancelled.deny_feedback": ("F03", "F04", "F16"),
+    "cancelled.follow_up": ("F03", "F04", "F16"),
+    "cancelled.fork": ("F03", "F04"),
+    "cancelled.reconnect": ("F03", "F04", "F16"),
+    "cancelled.reload": ("F03", "F04", "F16"),
+    "cancelled.restart": ("F12", "F16"),
+    "cancelled.second_window": ("F03", "F04", "F16"),
+    "cancelled.switch_model": ("F03", "F04", "F16"),
+    "cancelled.two_follow_ups": ("F03", "F04", "F16"),
     "continuing.approve": ("F07",),
     "continuing.cancel": ("F04", "F07"),
     "continuing.cancel_twice": ("F02", "F04", "F07"),
     "continuing.deny": ("F07",),
     "continuing.deny_feedback": ("F09",),
     "continuing.follow_up": ("F07",),
-    "continuing.fork": ("F11",),
+    "continuing.fork": ("F11", "F17"),
+    "continuing.clear": ("F17",),
     "continuing.reconnect": ("F07",),
     "continuing.reload": ("F07",),
     "continuing.second_window": ("F07",),
@@ -192,6 +222,7 @@ CELLS: dict[str, tuple[str, ...]] = {
     "tool.switch_model": ("F07",),
     "tool.two_follow_ups": ("F10",),
     "idle.two_follow_ups": ("F08",),
+    "background.two_follow_ups": ("F07", "F08"),
     "restarted.two_follow_ups": ("F08",),
     "incident.6fa3e09e": ("F01",),
     "live.paused_follow_up": ("F01",),

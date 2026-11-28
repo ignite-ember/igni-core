@@ -11,3 +11,7 @@ class Finding(BaseModel):
     finding_id: str
     title: str
     invariants: frozenset[str] = Field(default_factory=frozenset)
+    racy: bool = Field(default=False, description="Whether it shows only when timing allows.")
+    masks: frozenset[str] = Field(
+        default_factory=frozenset, description="Findings whose effect it can cancel out."
+    )
