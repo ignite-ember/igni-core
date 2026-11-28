@@ -270,8 +270,9 @@ async def test_a_message_while_a_turn_works_is_queued_for_it_and_no_run_starts()
     assert [c for c, _ in backend.calls if c == "run_message"] == []
     assert backend.controllers.runs.pending_journal.discards == 0, "the working turn's row stays"
     assert transport.sent == [
-        msg.UserMessageReceived(text="and this", client_id="tab-a", queued=True)
-    ]
+        msg.UserMessageReceived(text="and this", client_id="tab-a", queued=True),
+        msg.StreamEnd(id="r"),
+    ], "queued, then its own request ends: the window waits for that frame"
 
 
 async def test_an_armed_plan_wraps_the_next_prompt_once():

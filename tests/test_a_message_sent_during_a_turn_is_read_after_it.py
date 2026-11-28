@@ -222,6 +222,10 @@ class Rig(HostRig):
             m.text for m in self.windows.sent if isinstance(m, msg.UserMessageReceived) and m.queued
         ]
 
+    def stream_ends(self) -> list[str]:
+        """The request ids every window was told are finished, in order."""
+        return [m.id for m in self.windows.sent if isinstance(m, msg.StreamEnd)]
+
     def errors(self, request_id: str) -> list[str]:
         return [
             m.text for m in self.windows.sent if isinstance(m, msg.Error) and m.id == request_id
@@ -620,3 +624,22 @@ async def test_once_a_turn_has_ended_the_next_message_starts_its_own(
 
     assert rig.queued_echoes() == [], "nothing works: it is a turn of its own"
     assert brain.calls == calls + 1
+
+
+async def test_every_request_queued_for_a_working_turn_gets_its_stream_end_at_once(
+    rig: Rig, brain: Brain
+) -> None:
+    """A window waits for a request's ``stream_end`` without a timeout: a queued
+    message's request ends as it is queued, the working turn's when it ends."""
+    brain.hold()
+    first = rig.send(msg.UserMessage(id="m-1", text=f"{QUESTION}, slow"))
+    await asyncio.wait_for(brain.holding.wait(), 10)
+
+    await asyncio.wait_for(rig.send(msg.UserMessage(id="m-2", text="first follow-up")), 10)
+    await asyncio.wait_for(rig.send(msg.UserMessage(id="m-3", text="second follow-up")), 10)
+
+    assert rig.stream_ends() == ["m-2", "m-3"], "each queued request ended, the turn's still open"
+    brain.release.set()
+    await asyncio.wait_for(first, 30)
+    await rig.settle()
+    assert rig.stream_ends() == ["m-2", "m-3", "m-1"], "every request ended exactly once"
