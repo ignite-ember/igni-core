@@ -47,8 +47,32 @@ class DocumentNotes:
 
     @staticmethod
     def legacy(path: str, suffix: str, modern: str) -> str:
-        """A legacy Office format igni does not read."""
-        return f"[Could not read {path}: the legacy {suffix} format is not supported. Save it as {modern}.]"
+        """A legacy Office format igni does not read, which needs programs outside igni."""
+        return (
+            f"[Could not read {path}: the legacy {suffix} format is not supported. "
+            f"Save it as {modern}. {_propose('it as it is')}]"
+        )
+
+    @staticmethod
+    def iwork_no_preview(path: str, app: str, exports: str) -> str:
+        """An Apple iWork file that carries no preview PDF."""
+        return (
+            f"[Could not read {path}: this {app} file holds no preview PDF to read. "
+            f"Ask the user to export it from {app} as {exports}.]"
+        )
+
+    @staticmethod
+    def iwork_preview(app: str, exports: str) -> str:
+        """The text came from an Apple iWork file's preview PDF, not the document itself."""
+        return (
+            f"[This is the document's preview, a PDF saved inside the {app} file; it may not show "
+            f"all of the document. For all of it, ask the user to export it from {app} as {exports}.]"
+        )
+
+    @staticmethod
+    def outputs_dropped() -> str:
+        """A notebook's images, HTML and other outputs that are not text were left out."""
+        return "[Images, HTML and other non-text outputs are left out.]"
 
     @staticmethod
     def counted(n: int, unit: str) -> str:
@@ -88,7 +112,9 @@ class DocumentNotes:
         """A binary file in a format no reader claims."""
         return (
             f"[Could not read {path}: read_document reads PDF, Word (.docx), "
-            "Excel (.xlsx, .xlsm), PowerPoint (.pptx), CSV and TSV files.]"
+            "Excel (.xlsx, .xlsm, .xls), PowerPoint (.pptx), OpenDocument (.odt, .ods, .odp), "
+            "RTF, EPUB, email (.eml), Jupyter notebook (.ipynb), CSV and TSV files, and the "
+            f"preview inside Apple Numbers, Pages and Keynote files. {_propose('this one')}]"
         )
 
     @staticmethod
@@ -110,6 +136,15 @@ class DocumentNotes:
     def protected(path: str) -> str:
         """A key, a credential store or igni's own settings."""
         return f"[Could not read {path}: it holds credentials, keys or igni's own settings.]"
+
+
+def _propose(subject: str) -> str:
+    """What the model does about a format igni does not read: propose a reader of its own, and ask."""
+    return (
+        f"To read {subject}, propose to the user writing a small reader for its format, with "
+        "whatever it needs installed outside igni (in a project virtual environment, for "
+        "example). Ask first, and install nothing until the user agrees."
+    )
 
 
 def _quoted(text: str) -> str:

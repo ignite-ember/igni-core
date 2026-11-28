@@ -1,4 +1,4 @@
-"""The legacy Office formats igni does not read: a note that says so, and what to save as."""
+"""The legacy Office formats igni does not read: a note that says so, what to save as, and to propose a reader."""
 
 from __future__ import annotations
 
@@ -14,9 +14,9 @@ from igni_core.core.documents.window import ReadWindow
 
 
 class LegacyDocumentReader(DocumentReader):
-    """``.xls``, ``.doc`` and ``.ppt``: never opened."""
+    """``.doc`` and ``.ppt``: never opened, as reading them needs programs outside igni."""
 
-    _MODERN: ClassVar[dict[str, str]] = {".xls": ".xlsx", ".doc": ".docx", ".ppt": ".pptx"}
+    _MODERN: ClassVar[dict[str, str]] = {".doc": ".docx", ".ppt": ".pptx"}
     extensions: ClassVar[frozenset[str]] = frozenset(_MODERN)
 
     def _read(self, path: Path, budget: ReadBudget, window: ReadWindow) -> DocumentText:

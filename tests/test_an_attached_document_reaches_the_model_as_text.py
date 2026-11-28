@@ -103,12 +103,15 @@ async def test_a_document_is_never_sent_to_a_vision_model_as_a_file(tmp_path):
 
 
 async def test_a_legacy_upload_gets_the_save_as_note(tmp_path):
-    old = DocumentFixtures.legacy(_upload(tmp_path, "old.xls"))
+    old = DocumentFixtures.legacy(_upload(tmp_path, "old.doc"))
 
     block = _block((await _build(tmp_path, f"@{old} open this")).message)
 
     assert block.endswith(
-        f"[Could not read {old}: the legacy .xls format is not supported. Save it as .xlsx.]"
+        f"[Could not read {old}: the legacy .doc format is not supported. Save it as .docx. "
+        "To read it as it is, propose to the user writing a small reader for its format, with "
+        "whatever it needs installed outside igni (in a project virtual environment, for "
+        "example). Ask first, and install nothing until the user agrees.]"
     )
 
 

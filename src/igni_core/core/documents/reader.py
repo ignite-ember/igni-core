@@ -24,6 +24,8 @@ class DocumentReader(ABC):
     """A larger file is not opened."""
     MAX_UNZIPPED_BYTES: ClassVar[int] = 300 * 1024 * 1024
     """An Office file that unpacks to more is not opened."""
+    MAX_PART_BYTES: ClassVar[int] = 64 * 1024 * 1024
+    """One XML part of a zipped document larger than this is not parsed."""
     MAX_CHARS: ClassVar[int] = 100_000
     """About 25k tokens; a longer document is cut, and says so."""
     MAX_SECONDS: ClassVar[int] = 15
@@ -34,6 +36,8 @@ class DocumentReader(ABC):
     MAX_SLIDES: ClassVar[int] = 100
     NAMED_SHEETS: ClassVar[bool] = False
     """Whether a window may name a sheet."""
+    BUNDLES: ClassVar[bool] = False
+    """Whether a folder with one of the reader's extensions is a document: an Apple package."""
 
     def read(self, path: Path, window: ReadWindow | None = None) -> DocumentText:
         """The document's text in ``window``, or a note; never an exception."""

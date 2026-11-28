@@ -963,6 +963,7 @@ dependencies = [
     { name = "google-genai" },
     { name = "greenlet" },
     { name = "httpx" },
+    { name = "lxml" },
     { name = "openpyxl" },
     { name = "pydantic" },
     { name = "pypdf" },
@@ -973,9 +974,11 @@ dependencies = [
     { name = "ripgrep", version = "14.1.0", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "ripgrep", version = "15.1.0", source = { registry = "https://pypi.org/simple" }, marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "striprtf" },
     { name = "textual" },
     { name = "tokenizers" },
     { name = "websockets" },
+    { name = "xlrd" },
 ]
 
 [package.optional-dependencies]
@@ -1032,6 +1035,7 @@ requires-dist = [
     { name = "httpx", specifier = "~=0.28.1" },
     { name = "jsonschema", marker = "extra == 'dev'", specifier = "~=4.26.0" },
     { name = "laya", marker = "extra == 'decisions'", specifier = "~=0.4.20" },
+    { name = "lxml", specifier = "~=6.1" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = "~=2.3" },
     { name = "mypy", marker = "extra == 'dev'", specifier = "~=2.4.1" },
     { name = "openinference-instrumentation-agno", marker = "extra == 'otel'", specifier = "~=1.1.2" },
@@ -1055,10 +1059,12 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = "~=0.17.3" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = "~=2.1.6" },
     { name = "starlette", marker = "extra == 'decisions'", specifier = "~=1.10.0" },
+    { name = "striprtf", specifier = "~=0.0.35" },
     { name = "textual", specifier = "~=8.2.7" },
     { name = "tokenizers", specifier = "~=0.23.3" },
     { name = "uvicorn", marker = "extra == 'decisions'", specifier = "~=0.54.0" },
     { name = "websockets", specifier = "~=16.0" },
+    { name = "xlrd", specifier = "~=2.0.2" },
 ]
 provides-extras = ["decisions", "dev", "mcp", "gemini", "anthropic", "web", "otel"]
 
@@ -2535,6 +2541,15 @@ wheels = [
 ]
 
 [[package]]
+name = "striprtf"
+version = "0.0.35"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/25/ec/008fd13d23376e8f7a2f24f56381245218fb2322a17c41c4f944f54eeff9/striprtf-0.0.35.tar.gz", hash = "sha256:a21e8c4f73a791c3f23561df96701488c691ab1749a92487cc9e5fee6ea08455", size = 8017, upload-time = "2026-10-24T15:33:54.876Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/41/32/896d0597748a55913033a3a52de9a9449d0d479a1ac733a1e0178a537170/striprtf-0.0.35-py3-none-any.whl", hash = "sha256:2c8e207f47c9de355374d604167b17c99a06eb4d238e07cfba772f8669db60e4", size = 8448, upload-time = "2026-10-24T15:33:53.947Z" },
+]
+
+[[package]]
 name = "sympy"
 version = "1.14.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2853,6 +2868,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/7d/0a/ab645f8b4c594cac2db49bbc805bff97a9d3f2944061b865f67e0351b6c8/wrapt-2.5.2-cp312-cp312-win_amd64.whl", hash = "sha256:36021ef761856bdbc10d5f3da9a95af93ef60d6acf9c72c8f849937ba2b902aa", size = 106220, upload-time = "2026-10-29T23:04:58.081Z" },
     { url = "https://files.pythonhosted.org/packages/37/1e/232868b68b925ab29ca5acbec4ad54ee42a853fcd8f596bf7e0e0e3850f1/wrapt-2.5.2-cp312-cp312-win_arm64.whl", hash = "sha256:81bdf0bd141d9b1706a0751b2ee068c7afe6be4042712d427b32b3072d5c40b9", size = 103377, upload-time = "2026-10-29T23:04:59.366Z" },
     { url = "https://files.pythonhosted.org/packages/77/8b/1ea57b936b70f98e8e7620a352578096d778dbee95b262f73c066d210ffb/wrapt-2.5.2-py3-none-any.whl", hash = "sha256:61eb54e9540ea522c2c4752a57549a83d3c67e6704ed708403d28e067aaf90f0", size = 82025, upload-time = "2026-10-29T23:06:38.56Z" },
+]
+
+[[package]]
+name = "xlrd"
+version = "2.0.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/07/5a/377161c2d3538d1990d7af382c79f3b2372e880b65de21b01b1a2b78691e/xlrd-2.0.2.tar.gz", hash = "sha256:08b5e25de58f21ce71dc7db3b3b8106c1fa776f3024c54e45b45b374e89234c9", size = 100167, upload-time = "2025-06-14T08:46:39.039Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1a/62/c8d562e7766786ba6587d09c5a8ba9f718ed3fa8af7f4553e8f91c36f302/xlrd-2.0.2-py2.py3-none-any.whl", hash = "sha256:ea762c3d29f4cca48d82df517b6d89fbce4db3107f9d78713e48cd321d5c9aa9", size = 96555, upload-time = "2025-06-14T08:46:37.766Z" },
 ]
 
 [[package]]

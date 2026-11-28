@@ -126,7 +126,8 @@ fails to resolve, which is silent — the agent simply does not get that tool.
 `save_file`, so a file is read with `run_shell_command "cat <path>"`. The same
 goes for search: no `Grep`, no `Glob`, no `LS` — those are `rg`, shell globs and
 `ls` through `Bash`. `ReadDocument` is the one exception, and only for what `cat`
-cannot show: PDF, Word, Excel and PowerPoint files, and CSV/TSV as a table
+cannot show: PDF, Office, OpenDocument, RTF, EPUB, email, notebook and Apple
+iWork files, and CSV/TSV as a table
 ([TOOLS.md](TOOLS.md#readdocument-readdocumenttools)).
 
 This section previously listed `Read`, `Grep`, `Glob`, `LS`, `NotebookRead`,

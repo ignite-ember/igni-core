@@ -63,8 +63,10 @@ def test_the_tool_s_name_description_and_arguments_are_exactly_these(project):
     assert function.to_dict() == {
         "name": "read_document",
         "description": (
-            "Read a document that is not plain text: PDF, Word (.docx), Excel (.xlsx, .xlsm) "
-            "or PowerPoint (.pptx). CSV and TSV files are read too, as a table.\n"
+            "Read a document that is not plain text: PDF, Word (.docx), Excel (.xlsx, .xlsm, "
+            ".xls), PowerPoint (.pptx), OpenDocument (.odt, .ods, .odp), RTF, EPUB, a saved "
+            "email (.eml), a Jupyter notebook (.ipynb), or an Apple Numbers, Pages or Keynote "
+            "file (through its preview). CSV and TSV files are read too, as a table.\n"
             "Plain-text and code files are not for this tool: read them with the shell, as "
             "before. A long document is cut, and the cut says which part to ask for next."
         ),
@@ -82,8 +84,10 @@ def test_the_tool_s_name_description_and_arguments_are_exactly_these(project):
                     "type": "string",
                     "description": (
                         'Which part to read, as a range: "21-40", "21-" (to the end) or "21". '
-                        "It counts pages in a PDF, slides in a deck, sheets in a workbook, rows "
-                        "in a CSV or TSV, and paragraphs in a Word document. For rows of one "
+                        "It counts pages in a PDF (or an Apple file's preview), slides in a "
+                        "deck, sheets in a workbook, rows in a CSV or TSV, chapters in an EPUB, "
+                        "cells in a notebook, and paragraphs in a Word, OpenDocument or RTF "
+                        "document or an email's body. For rows of one "
                         'sheet, write the sheet\'s name first: "Sales!501-". Leave it empty to '
                         "read from the start."
                     ),
@@ -282,7 +286,7 @@ def test_a_plain_text_file_is_sent_to_the_shell(project, name, content):
     [
         ("photo.png", b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR"),
         ("archive.zip", b"PK\x03\x04\0\0\0\0"),
-        ("old.odt", b"PK\0\0" + b"x" * 9000),
+        ("model.bin", b"PK\0\0" + b"x" * 9000),
     ],
 )
 def test_a_binary_file_no_reader_claims_names_the_formats_it_reads(project, name, content):
@@ -290,7 +294,12 @@ def test_a_binary_file_no_reader_claims_names_the_formats_it_reads(project, name
 
     assert _read(project, name) == (
         f"[Could not read {project / name}: read_document reads PDF, Word (.docx), "
-        "Excel (.xlsx, .xlsm), PowerPoint (.pptx), CSV and TSV files.]"
+        "Excel (.xlsx, .xlsm, .xls), PowerPoint (.pptx), OpenDocument (.odt, .ods, .odp), "
+        "RTF, EPUB, email (.eml), Jupyter notebook (.ipynb), CSV and TSV files, and the "
+        "preview inside Apple Numbers, Pages and Keynote files. To read this one, propose to "
+        "the user writing a small reader for its format, with whatever it needs installed "
+        "outside igni (in a project virtual environment, for example). Ask first, and install "
+        "nothing until the user agrees.]"
     )
 
 
@@ -305,13 +314,16 @@ def test_a_nul_byte_past_the_sniffed_head_is_not_looked_at(project):
 
 @pytest.mark.parametrize(
     ("name", "suffix", "modern"),
-    [("old.xls", ".xls", ".xlsx"), ("old.doc", ".doc", ".docx"), ("OLD.PPT", ".ppt", ".pptx")],
+    [("old.doc", ".doc", ".docx"), ("OLD.PPT", ".ppt", ".pptx")],
 )
 def test_a_legacy_office_file_gets_the_legacy_note(project, name, suffix, modern):
     path = DocumentFixtures.legacy(project / name)
 
     assert _read(project, name) == (
-        f"[Could not read {path}: the legacy {suffix} format is not supported. Save it as {modern}.]"
+        f"[Could not read {path}: the legacy {suffix} format is not supported. Save it as {modern}. "
+        "To read it as it is, propose to the user writing a small reader for its format, with "
+        "whatever it needs installed outside igni (in a project virtual environment, for "
+        "example). Ask first, and install nothing until the user agrees.]"
     )
 
 
@@ -925,9 +937,8 @@ def test_following_the_hints_reaches_every_sheet_and_row(project, monkeypatch):
 def test_a_nul_byte_inside_the_sniffed_head_is_binary(project):
     (project / "mid.dat").write_bytes(b"x" * 5000 + b"\0" + b"x" * 100)
 
-    assert _read(project, "mid.dat").endswith(
-        ": read_document reads PDF, Word (.docx), "
-        "Excel (.xlsx, .xlsm), PowerPoint (.pptx), CSV and TSV files.]"
+    assert _read(project, "mid.dat").startswith(
+        f"[Could not read {project / 'mid.dat'}: read_document reads PDF, Word (.docx), "
     )
 
 

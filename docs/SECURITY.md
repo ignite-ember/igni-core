@@ -175,7 +175,8 @@ covers your files and the web:
   server's tools whose approved manifest says `readOnlyHint: true` and
   `destructiveHint: false`, whether they read their own data or the web
   (CodeIndex's `codeindex_cypher`, for one); the notebook readers; and
-  `read_document`, which reads a PDF or Office file inside the project.
+  `read_document`, which reads a document file (PDF, Office, OpenDocument,
+  RTF, EPUB, email, notebook, iWork preview) inside the project.
 - **Asked:** a `fetch_url`/`fetch_json` whose URL looks like it carries a
   secret or token (`?token=`, `?api_key=`, `$VAR`) — the same check Bypass's
   last check makes. Headless, with nobody to answer, it is refused.
