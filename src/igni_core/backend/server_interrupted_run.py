@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 # when a row deserialises into the wrong shape, SQLAlchemyError for a
 # locked or corrupt database file. A hard crash is exactly what leaves
 # such a row, so none of these may block startup.
-_AGNO_SESSION_READ_ERRORS: tuple[type[Exception], ...] = (
+AGNO_SESSION_READ_ERRORS: tuple[type[Exception], ...] = (
     ValueError,
     KeyError,
     TypeError,
@@ -164,7 +164,7 @@ class InterruptedRunSummaryBuilder:
             agno_session = await self._session.main_team.aget_session(
                 session_id=self._session.session_id,
             )
-        except _AGNO_SESSION_READ_ERRORS as exc:
+        except AGNO_SESSION_READ_ERRORS as exc:
             logger.warning("interrupted-run: Agno session unavailable: %s", exc)
             return None
         runs = getattr(agno_session, "runs", None) or []

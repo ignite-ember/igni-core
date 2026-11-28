@@ -24,6 +24,8 @@ def _pending_store() -> MagicMock:
     # The run loop stamps a streamed failure interrupted, so the FE can
     # offer Retry/Discard on it; a bare MagicMock is not awaitable.
     store.amark_interrupted = AsyncMock()
+    # Read before each run for the turns a cancel or a failure cut off.
+    store.alist_interrupted = AsyncMock(return_value=[])
     return store
 
 

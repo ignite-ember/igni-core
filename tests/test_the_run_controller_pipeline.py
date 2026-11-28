@@ -34,6 +34,13 @@ from igni_core.core.utils.media_schemas import MediaAttachments
 from igni_core.protocol import messages as msg
 
 
+class _NoRecall:
+    """No turn a cancel or a failure cut off."""
+
+    async def take(self) -> None:
+        return None
+
+
 class _Journal:
     def __init__(self) -> None:
         self.events: list[tuple[str, ...]] = []
@@ -45,7 +52,7 @@ class _Journal:
     async def drain_queued_drops(self) -> None:
         self.events.append(("drain",))
 
-    async def record(self, text: str) -> str:
+    async def record(self, text: str, carrying: list[str] | None = None) -> str:
         self.events.append(("record", text))
         return "pending-0123456789"
 
@@ -150,6 +157,8 @@ class _Rig:
         c = RunController.__new__(RunController)
         c._phase = RunPhase.idle
         c._interrupted_summary = None
+        c._recall = _NoRecall()  # type: ignore[assignment]
+        c._stamps = set()
         c._pending_id_for_cancel = None
         c._run_tasks = set()
         c._passengers = set()

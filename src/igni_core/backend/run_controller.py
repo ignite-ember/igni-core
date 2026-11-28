@@ -42,6 +42,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 from agno.agent import Agent
 from agno.team import Team
 
+from igni_core.backend.interrupted_turn_recall import InterruptedTurnRecall
 from igni_core.backend.model_http_client_manager import ModelHttpClientManager
 from igni_core.backend.pending_message_journal import PendingMessageJournal
 from igni_core.backend.prompt_builder import PromptBuilder
@@ -138,6 +139,9 @@ class RunController:
         self._dispatcher = StreamEventDispatcher(session, self.checkpoint)
         self._phase = RunPhase.idle
         self._interrupted_summary: InterruptedRunSummary | None = None
+        self._recall = InterruptedTurnRecall(session, pending_store)
+        # The cancel's stamps still being written: the next message's recap reads them.
+        self._stamps: set[asyncio.Future[None]] = set()
         # Serialisation + cancellation state — single owner (Pattern 1).
         self._run_lock = asyncio.Lock()
         # Every task running one of the session's runs: a turn, a resumed
@@ -233,6 +237,15 @@ class RunController:
         self._interrupted_summary = summary
         if summary is not None:
             self._pending_journal.queue_drops(summary.pending_ids_to_drop)
+
+    async def _recall_interrupted_turns(self) -> list[str]:
+        """With no crash recap waiting, recap the turns a cancel or a failure cut off; the rows it names."""
+        if self._interrupted_summary is not None:
+            return []
+        if self._stamps:
+            await asyncio.gather(*self._stamps, return_exceptions=True)
+        self._interrupted_summary = await self._recall.take()
+        return self._interrupted_summary.pending_ids_to_drop if self._interrupted_summary else []
 
     def _consume_interrupted_note(self, text: str | None) -> str | None:
         """Render the one-shot interrupted-run note for *this* delivery, or
@@ -612,12 +625,14 @@ class RunController:
         pending_id = self._pending_id_for_cancel
         if pending_id is None:
             return
-        background.start(
+        stamp = background.start(
             self._pending_journal.mark_interrupted(pending_id, reason, last_error),
             holder="run",
             reason="recording an interrupted run",
             name=f"mark_interrupted:{reason}:{pending_id[:8]}",
         )
+        self._stamps.add(stamp)
+        stamp.add_done_callback(self._stamps.discard)
 
     def cancel_agent_run(self, run_id: str) -> CancelAgentRunResult:
         """Cancel a specific sub-agent run by its Agno ``run_id``.
@@ -771,10 +786,8 @@ class RunController:
 
         team = self._session.main_team
 
-        # Consume the one-shot interrupted-summary + drain any
-        # pending-message ids queued during detect_interrupted_run.
-        interrupted_summary_text = self._consume_interrupted_note(text)
-        await self._pending_journal.drain_queued_drops()
+        # A paused run the person moved on from completes first: its turn
+        # is in the history, so the recap below does not repeat it.
         await self._close_abandoned_pause()
 
         # Fire UserPromptSubmit hook, before the prompt is built from
@@ -788,6 +801,13 @@ class RunController:
             return
         if gate.text is not None:
             text = gate.text
+
+        # Consume the one-shot interrupted-summary — a message the hook
+        # blocked leaves it for the next — and drain the ids
+        # detect_interrupted_run queued.
+        recalled_ids = await self._recall_interrupted_turns()
+        interrupted_summary_text = self._consume_interrupted_note(text)
+        await self._pending_journal.drain_queued_drops()
 
         # Pre-run prompt assembly: mentions, media, URL, learnings,
         # timestamp + interrupted-run note.
@@ -822,7 +842,7 @@ class RunController:
         # Pre-persist the user message so a kill mid-stream doesn't
         # lose it. On success the row is marked completed; on crash
         # it stays pending and the next --continue boot surfaces it.
-        pending_id = await self._pending_journal.record(text)
+        pending_id = await self._pending_journal.record(text, carrying=recalled_ids)
         # Stash on the instance so the sync ``cancel_run`` can
         # stamp the row as interrupted without an async hop. Cleared
         # below on natural completion + in the error branch so a

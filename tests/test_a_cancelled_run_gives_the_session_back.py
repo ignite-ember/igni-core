@@ -46,11 +46,18 @@ from igni_core.protocol import messages as msg
 # ── Fakes ────────────────────────────────────────────────────────────
 
 
+class _NoRecall:
+    """No turn a cancel or a failure cut off."""
+
+    async def take(self) -> None:
+        return None
+
+
 class _Journal:
     async def drain_queued_drops(self) -> None:
         return None
 
-    async def record(self, text: str) -> str:
+    async def record(self, text: str, carrying: list[str] | None = None) -> str:
         return "pending-1"
 
     async def mark_completed(self, pending_id: str) -> None:
@@ -115,6 +122,8 @@ def _controller(stream_messages: list[msg.Message] | None) -> RunController:
     controller = RunController.__new__(RunController)
     controller._phase = RunPhase.idle
     controller._interrupted_summary = None
+    controller._recall = _NoRecall()  # type: ignore[assignment]
+    controller._stamps = set()
     controller._pending_id_for_cancel = None
     controller._run_tasks = set()
     controller._passengers = set()
