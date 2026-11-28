@@ -140,14 +140,16 @@ jobs:
       # when it was set (87.6%, T6, 2026-11-03), minus one point, so it can only
       # go up. Raise it as coverage rises; never lower it to let a change
       # through. ``--cov-report=`` keeps the per-file table out of the log;
-      # the floor check still prints the total.
+      # the floor check still prints the total. The session-lifecycle
+      # matrix is left to its own job below: it drives a backend process,
+      # which this coverage cannot see, and it takes minutes.
       - name: Run tests
         env:
           IGNI_SDK_PYTHON: /tmp/igni-sdks/bin/python
           IGNI_SDK_DIR: ${{ github.workspace }}/.siblings/igni-sdk
           IGNI_APP_DIR: ${{ github.workspace }}/.siblings/igni-app
         run: >-
-          uv run pytest tests/ -q -rs
+          uv run pytest tests/ -q -rs -m "not session_lifecycle"
           --cov=igni_core --cov-branch --cov-report=
           --cov-fail-under=86.5
 
@@ -155,6 +157,57 @@ jobs:
         run: |
           uv pip install -e packages/igni-cloud
           uv run --no-sync pytest packages/igni-cloud/tests -q -rs
+
+  # The session-lifecycle matrix (tests/session_lifecycle/): the real
+  # backend process, driven over its WebSocket as the app drives it,
+  # against a scripted model that records every request. One shard per
+  # session state, so the matrix runs in parallel; the last shard runs
+  # the scenarios (6fa3e09e's replay, the runaway turn, the secrets, the
+  # injected bugs) and the live tier, which skips without a model key.
+  # Known findings are xfail(strict=True): a fix turns its cell red until
+  # its entry in known_findings.py comes out.
+  session-lifecycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard:
+          - idle
+          - streaming
+          - tool
+          - paused
+          - continuing
+          - subagent
+          - background
+          - errored
+          - cancelled
+          - restarted
+          - scenarios
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version-file: .python-version
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4.2.0
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: One state's row of the matrix
+        if: matrix.shard != 'scenarios'
+        run: >-
+          uv run --no-sync pytest tests/session_lifecycle/test_the_session_lifecycle_matrix.py
+          -q -rxXs -k "${{ matrix.shard }}"
+
+      - name: The scenarios
+        if: matrix.shard == 'scenarios'
+        run: >-
+          uv run --no-sync pytest tests/session_lifecycle -q -rxXs
+          --ignore=tests/session_lifecycle/test_the_session_lifecycle_matrix.py
 
   # The extension sandbox's real Linux path: bubblewrap with a network
   # namespace of its own, and bridge.py relaying the egress proxy into it

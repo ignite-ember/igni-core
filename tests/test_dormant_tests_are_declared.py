@@ -66,6 +66,13 @@ DECLARED_GATES: dict[str, str] = {
         "Which model the live tests use. Read alongside the key above; "
         "absent it, those tests skip with it."
     ),
+    "IGNI_LIFECYCLE_LIVE_CONFIG": (
+        "A config.yaml whose default model the session-lifecycle live tier "
+        "(tests/session_lifecycle/test_live_model_sessions_keep_their_history.py) "
+        "drives real multi-turn sessions with — on a developer's machine, "
+        "~/.igni/config.yaml. Real model calls cost money, so nothing sets it in "
+        "CI; the tier also runs on IGNI_TEST_LLM_API_KEY's endpoint."
+    ),
     "ANTHROPIC_API_KEY": (
         "One live call to Anthropic's API through `provider: anthropic` "
         "(tests/test_anthropic_live.py), which costs money per run. Not "
