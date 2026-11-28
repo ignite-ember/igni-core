@@ -42,6 +42,8 @@ class PendingMessageJournal:
             session_id if callable(session_id) else (lambda: session_id)
         )
         self._ids_to_drop: list[str] = []
+        # Interrupted rows a message's turn was told about: settled when that turn completes.
+        self._carried: dict[str, list[str]] = {}
 
     @property
     def _session_id(self) -> str:
@@ -55,16 +57,21 @@ class PendingMessageJournal:
         ``arecord_received``) directly."""
         return self._store
 
-    async def record(self, text: str) -> str:
+    async def record(self, text: str, carrying: list[str] | None = None) -> str:
         """Pre-persist a user message before ``team.arun``. Returns
         the opaque row id so the caller can mark it completed on
-        the success path."""
-        return await self._store.arecord_received(self._session_id, text)
+        the success path. ``carrying`` rows go once this turn completes."""
+        pending_id = await self._store.arecord_received(self._session_id, text)
+        if carrying:
+            self._carried[pending_id] = list(carrying)
+        return pending_id
 
     async def mark_completed(self, pending_id: str) -> None:
         """Flip a pre-persisted row to ``completed`` — called on the
-        natural end-of-run path."""
+        natural end-of-run path — and discard the rows its turn carried."""
         await self._store.amark_completed(pending_id)
+        for carried_id in self._carried.pop(pending_id, []):
+            await self._store.adiscard(carried_id)
 
     async def mark_interrupted(
         self,

@@ -56,6 +56,10 @@ class _Team:
         self._runs = 0
         self.stopped: list[str] = []
 
+    async def aget_session(self, **_: Any) -> None:
+        """No stored runs: every stamped turn is one the history leaves out."""
+        return None
+
     async def arun(self, *_: Any, **__: Any) -> AsyncIterator[Any]:
         self._runs += 1
         if self._runs == 1 and self._pauses:
