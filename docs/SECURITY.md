@@ -147,6 +147,73 @@ check cannot run, and a call that would have been checked is *asked about*,
 never let through. A headless run with nobody to ask refuses it with the
 reason.
 
+#### What a read never gets past
+
+Bypass lets the agent read files without asking, but never a secret: a read
+of one is always put to you first (refused in a headless run). This holds
+for the file tools (`read_file`, `search_files`) and for a shell
+command that prints, copies or packs the file — `cat`, `less`, `head`,
+`tail`, `grep`, `rg`, `sed`, `awk`, `jq`, `sqlite3`, `cp`, `rsync`, `tar`,
+`zip`, `base64`, `openssl`, `dd`, `vim`, PowerShell's `Get-Content`, and the
+rest of the list in `core/hooks/secret_files.py`. Listing is not reading:
+`ls`, `find`, `stat` and `list_files` on a folder that holds a secret run as
+usual. Names match whatever their case, and a Windows path's backslashes
+read as slashes.
+
+- **Environment files:** `.env` and `.env.*` — but not a template:
+  `.env.example`, `.env.sample`, `.env.template`, `.env.dist` (or any name
+  with an `example`, `sample`, `template` or `dist` part).
+- **Private keys and certificates:** `id_rsa`, `id_dsa`, `id_ecdsa`,
+  `id_ed25519` (and the `_sk` forms), `*.pem`, `*.key` (but not a Keynote
+  document: a `.key` folder bundle or zip), `*.p8`, `*.p12`,
+  `*.pfx`, `*.ppk`, `*.jks`, `*.keystore`, `*.ovpn`, `kubeconfig` and
+  `*.kubeconfig`, GnuPG secret-key exports (`secring.*`, `*secret*.asc`,
+  `*private*.asc`, `*secret*.gpg`, `*private*.gpg`), and everything in
+  `~/.ssh/`, `~/.gnupg/`, `~/.password-store/` and `/etc/wireguard/`.
+- **Files whose names say what they hold**, when they are data files (text,
+  CSV, JSON, YAML, TOML, INI, XML, PDF, office documents, images, no
+  extension) and not code or Markdown: backup and recovery codes
+  (`Backup-codes.txt`, `github-recovery-codes.txt`), recovery keys
+  (`BitLocker Recovery Key ….TXT`), a 1Password Emergency Kit, names ending in
+  `password`, `token` or `api_key`, names containing `passwords` or
+  `secrets`, and Bitwarden, 1Password and LastPass exports. So
+  `passwords.csv`, `db_password.txt`, `secrets.yaml` and `token.json` are
+  secrets; `password_reset.py`, `tokens.css`, `tokens.json` and
+  `secrets_test.go` are not.
+- **Password managers and keychains:** `*.kdbx`, `*.kdb`, `*.1pif`,
+  `*.1pux`, `*.agilekeychain`, `*.opvault`, `*.psafe3`, `wallet.dat`,
+  `*.keychain`, `*.keychain-db`, `~/Library/Keychains/`, the GNOME keyring
+  (`~/.local/share/keyrings/`) and Windows' credential and DPAPI folders.
+  So is a shell command that prints a keychain or a credential store:
+  `security find-generic-password`, `find-internet-password`,
+  `dump-keychain` and `export`, `secret-tool lookup`, `pass show`, `op read`,
+  `op item get`, `bw get`, `gh auth token`, `gcloud auth print-access-token`,
+  `aws configure get aws_secret_access_key`, `aws configure
+  export-credentials` and `gpg --export-secret-keys`.
+- **Browsers' passwords and cookies:** Chrome, Chromium, Edge, Brave,
+  Vivaldi, Opera, Arc and Yandex profiles' `Login Data`, `Cookies`,
+  `Web Data` and `Local State`; Firefox-family profiles' `logins.json`;
+  `key3.db`, `key4.db`, `signons.sqlite` and `cookies.sqlite` anywhere; and
+  Safari's `*.binarycookies` — `sqlite3` on any of them included.
+- **Cloud, registry and tool credentials:** `~/.aws/credentials` and the SSO
+  and CLI caches, `~/.azure/`, `~/.config/gcloud/`, `~/.oci/config`,
+  `~/.config/doctl/`, `~/.docker/config.json`, `.dockercfg`,
+  `~/.kube/config`, `~/.config/gh/hosts.yml`, `~/.config/hub`,
+  `~/.config/git/credentials`, `.git-credentials`, `.netrc`,
+  `~/.terraform.d/credentials.tfrc.json`, `.terraformrc`, `.vault-token`,
+  `~/.huggingface/token`, `~/.cache/huggingface/token`, `~/.config/op/`,
+  `.npmrc`, `.pypirc`, `~/.m2/settings.xml`, `~/.gradle/gradle.properties`,
+  `~/.cargo/credentials`, `credentials.json`, `service-account*.json`,
+  `client_secret*.json`, `*.token`, `.pgpass`, `.my.cnf`, `.mylogin.cnf`,
+  `.s3cfg`, `.boto`, `.htpasswd`, and `/etc/shadow`, `/etc/gshadow`,
+  `/etc/master.passwd`. A backup next to one (`credentials.bak`) counts, and
+  so does a read of the folder that holds it (`grep -r x ~/.aws`).
+- **Shell and REPL history**, which keeps whatever was typed at a prompt:
+  `.bash_history`, `.zsh_history`, `.zhistory`, `.histfile`, `.sh_history`,
+  `fish_history`, `.python_history`, `.psql_history`, `.mysql_history`,
+  `.sqlite_history`, `.node_repl_history`, `.rediscli_history` and
+  PowerShell's `ConsoleHost_history.txt`.
+
 #### What `--read-only` does
 
 It is plan mode's reads with no questions, for the whole session. Reading

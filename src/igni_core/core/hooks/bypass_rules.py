@@ -21,59 +21,14 @@ from __future__ import annotations
 
 import re
 import shlex
-from fnmatch import fnmatch
 from pathlib import Path
 
-#: Files that are almost never a legitimate thing for an agent to read on its
-#: own — private keys, cloud and registry credentials, auth stores. Reading one
-#: is the shape of credential theft (the first half of an exfiltration, and the
-#: half a network rule misses when the send happens later or out of band), so
-#: Bypass stops to ask even though the call only reads. Deliberately NARROWER
-#: than ``safety.protected_paths``: that list gates *writes* and includes
-#: routine files like ``.env`` a developer reads constantly; these are the
-#: files whose *read* is itself suspicious.
-_SECRET_NAME_GLOBS: tuple[str, ...] = (
-    "id_rsa",
-    "id_dsa",
-    "id_ecdsa",
-    "id_ed25519",
-    "*.ppk",
-    "*.pem",
-    "*.p12",
-    "*.pfx",
-    ".netrc",
-    ".npmrc",
-    ".pypirc",
-    ".git-credentials",
-    "credentials.json",
-    "service-account*.json",
-)
-_SECRET_PATH_SUBSTR: tuple[str, ...] = (
-    "/.ssh/",
-    "/.aws/credentials",
-    "/.docker/config.json",
-    "/.kube/config",
-    "/.config/gcloud/",
-)
-#: Utilities whose job is to emit a file's bytes — enough to lift a secret.
-_READ_UTILS = r"cat|bat|less|more|head|tail|nl|tac|xxd|od|hexdump|strings|base64|cp|rsync|install|openssl|grep|egrep|rg|ag|ack"
-#: Secret/key targets as they appear inside a shell command.
-_SECRET_IN_SHELL = (
-    r"(~?/?\.ssh/|\bid_rsa\b|\bid_ed25519\b|\bid_ecdsa\b|\bid_dsa\b|\.aws/credentials|"  # noqa: S105 — a pattern that detects secrets, not one
-    r"\.netrc\b|\.git-credentials\b|\.pypirc\b|\.npmrc\b|\.kube/config|\.docker/config\.json|"
-    r"\.pem\b|\.p12\b|\.pfx\b)"
-)
+from igni_core.core.hooks.secret_files import SecretFiles
 
 
 def _is_secret_file(path: str) -> bool:
     """True when ``path`` names a credential, private key or auth store."""
-    if not path:
-        return False
-    name = Path(path).name
-    if any(fnmatch(name, glob) for glob in _SECRET_NAME_GLOBS):
-        return True
-    normalized = "/" + path.replace("\\", "/").lstrip("/")
-    return any(sub in normalized for sub in _SECRET_PATH_SUBSTR)
+    return SecretFiles.is_secret(path)
 
 
 def flag_file_read(path: str) -> str | None:
@@ -85,10 +40,22 @@ def flag_file_read(path: str) -> str | None:
     return "reads a credential or secret file" if _is_secret_file(path) else None
 
 
+class _SecretRead:
+    """A command that reads a secret file, standing among the shell rules' patterns."""
+
+    def search(self, command: str) -> bool:
+        """True when ``command`` prints, copies or packs a secret, as a pattern's search would match."""
+        return SecretFiles.read_in(command)
+
+
+_SECRET_READ = "secret read"  # noqa: S105 — a marker in the rule table, not a secret
+"""Where :class:`_SecretRead` stands in the shell rules' order."""
+
+
 #: (pattern, reason) for shell commands. Searched case-insensitively
 #: anywhere in the command, so a chained ``cd x && …`` is still seen.
-_SHELL_RULES: tuple[tuple[re.Pattern[str], str], ...] = tuple(
-    (re.compile(p, re.IGNORECASE), why)
+_SHELL_RULES: tuple[tuple[re.Pattern[str] | _SecretRead, str], ...] = tuple(
+    (_SecretRead() if p == _SECRET_READ else re.compile(p, re.IGNORECASE), why)
     for p, why in (
         (
             r"\b(curl|wget|fetch)\b[^|;&]*\|\s*(sudo\s+)?(ba|z|da|k)?sh\b",
@@ -146,10 +113,7 @@ _SHELL_RULES: tuple[tuple[re.Pattern[str], str], ...] = tuple(
             r"\b(env|printenv|set)\s*\|\s*(curl|wget|nc|ncat)\b",
             "sends environment variables over the network",
         ),
-        (
-            rf"\b({_READ_UTILS})\b[^|;&]*{_SECRET_IN_SHELL}",
-            "reads a credential or secret file",
-        ),
+        (_SECRET_READ, "reads a credential or secret file"),
         (
             # An inline interpreter one-liner that both reaches the network AND
             # touches env/secrets — the code-shaped exfil a `curl` rule misses.

@@ -389,6 +389,7 @@ REASON_READ = "reads a credential or secret file"
         "C:\\Users\\me\\.ssh\\known_hosts",
         ".ssh/authorized_keys",
         "~/.aws/credentials",
+        ".env",
     ],
 )
 def test_a_credential_or_key_file_is_flagged_for_reading(path) -> None:
@@ -400,7 +401,6 @@ def test_a_credential_or_key_file_is_flagged_for_reading(path) -> None:
     [
         "",
         "src/main.py",
-        ".env",
         ".env.example",
         "README.md",
         "id_rsa.pub.txt",
