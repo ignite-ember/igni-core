@@ -13,7 +13,14 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from igni_core.core.hooks.bypass_rules import flag_file_read, flag_shell, flag_url, flag_write
+from igni_core.core.config.permission_eval.read_only_shell import command_segments, is_read_only
+from igni_core.core.hooks.bypass_rules import (
+    flag_file_read,
+    flag_shell,
+    flag_shell_read,
+    flag_url,
+    flag_write,
+)
 
 _SHELL_TOOLS = frozenset({"run_shell_command", "bash", "shell"})
 _WRITE_TOOLS = frozenset({"edit_file", "edit_file_replace_all", "create_file", "write_file"})
@@ -76,8 +83,21 @@ class ToolKind(StrEnum):
         return str(value or "")
 
     def secret_read(self, args: dict[str, Any]) -> str | None:
-        """Why reading this path needs a yes, for a file read of a secret; otherwise None."""
-        return flag_file_read(self.target(args)) if self is ToolKind.READ_FILE else None
+        """Why this read needs a yes, for a file read or read-only command naming a secret; otherwise None."""
+        match self:
+            case ToolKind.READ_FILE:
+                return flag_file_read(self.target(args))
+            case ToolKind.SHELL:
+                return flag_shell_read(self.target(args))
+            case _:
+                return None
+
+    def reads_only(self, args: dict[str, Any]) -> bool:
+        """A shell command whose every joined command is a read-only one."""
+        if self is not ToolKind.SHELL:
+            return False
+        segments = command_segments(self.target(args))
+        return segments is not None and all(is_read_only(part) for _joiner, part in segments)
 
     def rule(self, args: dict[str, Any], project_dir: Path | None) -> str | None:
         """What a shape rule says is dangerous about the call, or None."""

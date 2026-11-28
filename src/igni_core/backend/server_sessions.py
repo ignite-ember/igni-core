@@ -211,8 +211,7 @@ class SessionsController:
         needle = (query or "").strip()
         if not needle:
             return []
-        listing = await self._session.persistence.list_sessions(limit=None)
-        rows = listing.value if listing.ok else []
+        rows = await self._session.persistence.list_sessions(limit=None)
         out: list[GlobalChatSearchHit] = []
         for row in rows:
             if len(out) >= limit:

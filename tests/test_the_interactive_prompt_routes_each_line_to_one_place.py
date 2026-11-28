@@ -36,6 +36,7 @@ from igni_core.core.agents.schemas import AgentDefinition
 from igni_core.core.config.group_policy.layout import GroupPolicyLayout
 from igni_core.core.config.settings import Settings
 from igni_core.core.hooks.executor import HookExecutor
+from igni_core.core.hooks.text_only_media_guard import TextOnlyMediaGuard
 from igni_core.core.session.interactive_loop import InteractiveSessionLoop
 from igni_core.core.skills.loader import SkillPool
 from igni_core.core.utils.update_checker_schemas import UpdateError, UpdateInfo
@@ -78,6 +79,7 @@ class _Session:
         self.skill_pool = SkillPool()
         self.hooks_map: dict[str, list[Any]] = {"PreToolUse": [object(), object()]}
         self.hook_executor = HookExecutor({})
+        self.media_guard = TextOnlyMediaGuard()
         self.messages: list[str] = []
         self.last_turn_failure: str | None = None
         # Nothing cached, so the group ships nothing of any kind.

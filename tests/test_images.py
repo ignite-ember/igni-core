@@ -9,9 +9,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from agno.media import File, Image
 
 from igni_core.core.utils.media import MediaResolver
+from igni_core.core.utils.media_schemas import MediaAttachments
 
 
 class TestResolveTextReferences:
@@ -95,6 +97,101 @@ class TestResolveTextReferences:
         assert resolution.attachable == []
 
 
+class TestEachReferenceIsRewrittenWhereItStands:
+    """A name matched more than once is rewritten once at each place, never inside a path."""
+
+    def test_a_name_written_twice_comes_out_as_its_path_twice(self, tmp_path: Path) -> None:
+        (tmp_path / "b.png").write_bytes(b"img")
+        b = str(tmp_path / "b.png")
+
+        resolution = MediaResolver(project_dir=tmp_path).resolve_text_references("b.png and b.png")
+
+        assert resolution.text == f"{b} and {b}"
+        assert resolution.paths == [b, b]
+        assert resolution.attachable == [b]
+
+    def test_two_mentions_side_by_side_keep_their_at_signs(self, tmp_path: Path) -> None:
+        (tmp_path / "a.png").write_bytes(b"img")
+        (tmp_path / "b.png").write_bytes(b"img")
+        a, b = str(tmp_path / "a.png"), str(tmp_path / "b.png")
+
+        resolution = MediaResolver(project_dir=tmp_path).resolve_text_references("@a.png @b.png")
+
+        assert resolution.text == f"@{a} @{b}"
+
+    def test_the_last_name_of_a_referenced_files_line_is_not_doubled(self, tmp_path: Path) -> None:
+        """The case found on main: ``b.png`` matched in the line and in the body."""
+        (tmp_path / "a.png").write_bytes(b"img")
+        (tmp_path / "b.png").write_bytes(b"img")
+        a, b = str(tmp_path / "a.png"), str(tmp_path / "b.png")
+        text = (
+            "<attached-files>\n[Referenced files: a.png, b.png — read before responding]\n"
+            "</attached-files>\n@a.png @b.png"
+        )
+
+        resolution = MediaResolver(project_dir=tmp_path).resolve_text_references(text)
+
+        assert resolution.text == (
+            f"<attached-files>\n[Referenced files: a.png, {b} — read before responding]\n"
+            f"</attached-files>\n@{a} @{b}"
+        )
+
+    def test_a_bare_name_after_its_relative_path_is_not_written_into_it(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        (tmp_path / "a.png").write_bytes(b"img")
+        a = str((tmp_path / "a.png").resolve())
+        monkeypatch.chdir(tmp_path)
+
+        resolution = MediaResolver(project_dir=tmp_path).resolve_text_references(
+            "./a.png and a.png"
+        )
+
+        assert resolution.text == f"{a} and {a}"
+
+    def test_a_relative_path_mention_keeps_its_at_sign(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        (tmp_path / "a.png").write_bytes(b"img")
+        monkeypatch.chdir(tmp_path)
+
+        resolution = MediaResolver(project_dir=tmp_path).resolve_text_references("see @./a.png")
+
+        assert resolution.text == f"see @{(tmp_path / 'a.png').resolve()}"
+
+
+class TestLocate:
+    """One reference resolves to the path the text would be rewritten to."""
+
+    def test_a_bare_name_is_found_in_a_search_directory(self, tmp_path: Path) -> None:
+        downloads = tmp_path / "downloads"
+        downloads.mkdir()
+        (downloads / "shot.png").write_bytes(b"img")
+
+        resolver = MediaResolver(project_dir=tmp_path / "proj", search_dirs=(downloads,))
+
+        assert resolver.locate("shot.png") == str((downloads / "shot.png").resolve())
+
+    def test_a_relative_path_is_resolved(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        (tmp_path / "shot.png").write_bytes(b"img")
+        monkeypatch.chdir(tmp_path)
+
+        assert MediaResolver().locate("./shot.png") == str((tmp_path / "shot.png").resolve())
+
+    @pytest.mark.parametrize("reference", ["./gone.png", "gone.png", "notes.md", "shot.png,"])
+    def test_a_reference_to_no_media_file_found_is_none(
+        self, tmp_path: Path, reference: str
+    ) -> None:
+        (tmp_path / "notes.md").write_text("x")
+        (tmp_path / "shot.png").write_bytes(b"img")
+
+        resolver = MediaResolver(project_dir=tmp_path, search_dirs=())
+
+        assert resolver.locate(reference) is None
+
+
 class TestAttachLocalPaths:
     """Vision models get Agno media objects from resolved paths."""
 
@@ -131,3 +228,20 @@ class TestAttachLocalPaths:
 
     def test_no_paths_attach_nothing(self) -> None:
         assert MediaResolver().attach_local_paths([]) is None
+
+    def test_the_bundle_names_the_local_files_it_attached(self, tmp_path: Path) -> None:
+        image, clip = tmp_path / "photo.png", tmp_path / "clip.mp4"
+        image.write_bytes(b"img")
+        clip.write_bytes(b"mp4")
+
+        attachments = MediaResolver().attach_local_paths([str(image), "notes.md", str(clip)])
+
+        assert attachments is not None
+        assert attachments.local_paths == [str(image), str(clip)]
+
+    def test_a_merge_keeps_the_local_files_of_both(self) -> None:
+        bundle = MediaAttachments(local_paths=["/p/a.png"])
+
+        bundle.merge(MediaAttachments(local_paths=["/p/b.mp4"]))
+
+        assert bundle.local_paths == ["/p/a.png", "/p/b.mp4"]

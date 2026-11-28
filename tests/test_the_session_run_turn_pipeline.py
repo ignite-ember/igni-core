@@ -122,10 +122,11 @@ async def test_a_referenced_file_is_resolved_to_its_path_and_named(tmp_path):
     await _run(session)._run_turn("describe shot.png")
 
     full = str((tmp_path / "shot.png").resolve())
-    session.display.print_info.assert_called_once_with(f"Resolved: {full}")
+    assert session.display.print_info.call_args_list[0].args == (f"Resolved: {full}",)
     (sent,) = session.handle_message.await_args.args
-    assert sent == f"describe {full}"
-    # A text-only model gets the path, to read with its tools.
+    # A text-only model gets the path and the file's metadata, never its content.
+    assert sent.endswith(f"\ndescribe {full}")
+    assert f"- shot.png (path: {full}, type: image/png, size: 8 bytes)" in sent
     assert "media" not in session.handle_message.await_args.kwargs
 
 

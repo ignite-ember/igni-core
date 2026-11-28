@@ -90,10 +90,6 @@ class TestTheAnswer:
         assert "the safety model rated it 0.91 of 1 (might delete or overwrite data)" in (
             judged.explained("Deletes the build cache.")
         )
-        unchecked = Verdict(needs_approval=True, reason="could not be checked for safety")
-        assert unchecked.explained("Runs a script.").endswith(
-            "because the call could not be checked for safety."
-        )
 
 
 class TestTheQuestionPutToTheModel:

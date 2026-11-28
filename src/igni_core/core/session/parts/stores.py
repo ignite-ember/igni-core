@@ -5,8 +5,8 @@ Two groups live here:
 * the **loop state** — the ``/loop`` machine and the two Sqlite-backed
   stores its progress goes to;
 * the **scratch** — the todo list, the plan store, the memory mirror,
-  the output-style selection, the broadcast bus, the reminder queue and
-  the session's event log.
+  the output-style selection, the broadcast bus, the reminder queue, the
+  guard on a text-only model's media reads and the session's event log.
 
 None of them knows about the others; the session holds them.
 """
@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from igni_core.core.hooks.text_only_media_guard import TextOnlyMediaGuard
 from igni_core.core.loop import LoopProgressStore, LoopStore
 from igni_core.core.session.broadcast import BroadcastBus
 from igni_core.core.session.event_log import SessionEventLog
@@ -59,6 +60,7 @@ class StoresBuilder:
         session.output_style = OutputStyleSelection()
         session.broadcast_bus = BroadcastBus()
         session.reminders = PendingReminderQueue()
+        session.media_guard = TextOnlyMediaGuard()
         # The event log persists through the session's own store, which is
         # only there once the session is past its construction — hence the
         # late lookup rather than a captured value.

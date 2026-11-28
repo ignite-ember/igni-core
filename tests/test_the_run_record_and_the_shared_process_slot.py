@@ -35,6 +35,7 @@ from igni_core.backend.run_controller import RunController
 from igni_core.backend.schemas_run import HookGateResult, PromptBuildResult, RunPhase
 from igni_core.core.config.group_policy.gate import RunGate
 from igni_core.core.config.schemas.models import ModelsConfig
+from igni_core.core.hooks.text_only_media_guard import TextOnlyMediaGuard
 from igni_core.core.session.event_log import SessionEventLog
 from igni_core.core.session.reminders import PendingReminderQueue
 from igni_core.core.tools.process_events import ProcessExitEvent
@@ -333,6 +334,7 @@ class _ReminderSession:
         self.project_dir = project_dir
         self.settings = SimpleNamespace(models=ModelsConfig(default="m"))
         self.reminders = PendingReminderQueue()
+        self.media_guard = TextOnlyMediaGuard()
         self.learning_mgr = SimpleNamespace(inject=self._inject_learnings)
 
     async def _inject_learnings(self) -> None:
