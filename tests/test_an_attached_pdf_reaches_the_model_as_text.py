@@ -17,6 +17,7 @@ from igni_core.core.config.model_entry import ModelRegistryEntry
 from igni_core.core.config.schemas.models import ModelsConfig
 from igni_core.core.config.settings import Settings
 from igni_core.core.documents.reader import DocumentReader
+from igni_core.core.hooks.text_only_media_guard import TextOnlyMediaGuard
 from igni_core.core.session.reminders import PendingReminderQueue
 from igni_core.core.session.session_run import SessionRun
 
@@ -72,6 +73,7 @@ class _Session:
             ),
         )
         self.reminders = PendingReminderQueue()
+        self.media_guard = TextOnlyMediaGuard()
         self.learning_mgr = SimpleNamespace(inject=AsyncMock())
 
 

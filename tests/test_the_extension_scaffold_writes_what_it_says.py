@@ -270,3 +270,20 @@ def test_the_readme_ships_it_as_the_tutorial_does(
     assert "test -f .kek ||" in readme
     assert "IGNI_KEY_ENCRYPTION_KEY=$(cat .kek)" in readme
     assert "**Groups** → the group → **Extensions**" in readme
+
+
+# ── the page under igni's header ────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "kind,script", [("dev", "ui/main.js"), ("service", "extension/ui/main.js")]
+)
+def test_the_scaffolded_page_starts_below_the_header_igni_draws_over_it(
+    tmp_path: Path, kind: str, script: str
+) -> None:
+    """igni's frame reaches up under its header and sends the room to leave as ``--inset-top``."""
+    scaffold = Scaffold(tmp_path / "tickets", "acme.tickets")
+    scaffold.write_dev() if kind == "dev" else scaffold.write_service()
+    page = (tmp_path / "tickets" / script).read_text(encoding="utf-8")
+    assert 'message.kind === "hello" || message.kind === "theme"' in page
+    assert 'document.body.style.paddingTop = message.tokens?.["--inset-top"] ?? "";' in page

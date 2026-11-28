@@ -29,6 +29,8 @@ Contents:
   :meth:`total` (int summary) in place of the dict-shaped idioms.
 * :class:`ResolvedText` — Pydantic model, return type of
   :meth:`MediaResolver.resolve_text_references`.
+* :class:`PixelSize` / :class:`MediaFileMetadata` — what a text-only
+  model is told about a media file instead of its content.
 """
 
 from __future__ import annotations
@@ -127,6 +129,11 @@ class MediaTaxonomy:
         or ``None`` if no spec matches. Case-insensitive."""
         return self.by_extension.get(ext.lower())
 
+    def needs_vision(self, ext: str) -> bool:
+        """Whether ``ext`` names an image, audio or video file — what a text-only model cannot take."""
+        spec = self.classify(ext)
+        return spec is not None and spec.kind is not MediaKind.document
+
     @property
     def all_extensions(self) -> frozenset[str]:
         """All known extensions across every kind — used to build
@@ -205,6 +212,8 @@ class MediaAttachments(BaseModel):
     audio: list[Audio] = Field(default_factory=list)
     videos: list[Video] = Field(default_factory=list)
     files: list[File] = Field(default_factory=list)
+    local_paths: list[str] = Field(default_factory=list)
+    """The local files attached, as :meth:`MediaResolver.attach_local_paths` was given them."""
 
     def add(self, bucket: MediaBucket, item: MediaObject) -> None:
         """Put one attachment in the bucket its kind belongs to.
@@ -228,6 +237,7 @@ class MediaAttachments(BaseModel):
         self.audio.extend(other.audio)
         self.videos.extend(other.videos)
         self.files.extend(other.files)
+        self.local_paths.extend(other.local_paths)
 
     def to_kwargs(self) -> dict[str, Any]:
         """Lower to ``**kwargs`` for ``team.arun(**media.to_kwargs())``.
@@ -265,6 +275,33 @@ class MediaAttachments(BaseModel):
         idiom PromptBuilder used to run after ``extract_media_urls``
         returned a dict."""
         return len(self.images) + len(self.audio) + len(self.videos) + len(self.files)
+
+
+class PixelSize(BaseModel):
+    """An image's width and height in pixels."""
+
+    width: int
+    height: int
+
+
+class MediaFileMetadata(BaseModel):
+    """What a text-only model is told about a media file: its metadata, never its content."""
+
+    name: str
+    path: str
+    kind: MediaKind
+    media_type: str
+    size_bytes: int | None = None
+    pixels: PixelSize | None = None
+
+    def describe(self) -> str:
+        """One line naming the file and each metadata field that could be read."""
+        fields = [f"path: {self.path}", f"type: {self.media_type}"]
+        if self.size_bytes is not None:
+            fields.append(f"size: {self.size_bytes} bytes")
+        if self.pixels is not None:
+            fields.append(f"dimensions: {self.pixels.width}x{self.pixels.height} px")
+        return f"- {self.name} ({', '.join(fields)})"
 
 
 class ResolvedText(BaseModel):

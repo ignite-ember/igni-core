@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import re
+from pathlib import PurePath
+
+from igni_core.core.utils.media_schemas import MediaTaxonomy
 
 _AT_MENTION_RE = re.compile(r"(?:^|(?<=\s))@(\S+)")
 
@@ -24,6 +27,11 @@ def process_file_mentions(text: str) -> tuple[str, list[str]]:
     Email-style ``user@domain`` is NOT a mention — the regex
     requires the ``@`` to be preceded by whitespace or
     start-of-string.
+
+    Image, audio and video mentions are left out of the "read before
+    responding" line: :class:`~igni_core.core.utils.turn_media.TurnMediaNotices`
+    adds them to the block as attached or as unseen, with their metadata.
+    They stay in the returned paths.
     """
     paths: list[str] = []
 
@@ -37,10 +45,12 @@ def process_file_mentions(text: str) -> tuple[str, list[str]]:
 
     cleaned = _AT_MENTION_RE.sub(_collect, text)
 
-    if paths:
+    taxonomy = MediaTaxonomy.default()
+    readable = [p for p in paths if not taxonomy.needs_vision(PurePath(p).suffix)]
+    if readable:
         hint = (
             "<attached-files>\n"
-            "[Referenced files: " + ", ".join(paths) + " — read before responding]\n"
+            "[Referenced files: " + ", ".join(readable) + " — read before responding]\n"
             "</attached-files>"
         )
         cleaned = hint + ("\n" + cleaned if cleaned else "")
