@@ -33,3 +33,8 @@ class RecordedRequest(BaseModel):
     def mentions(self, needle: str) -> bool:
         """Whether any message's text contains ``needle``."""
         return any(needle in m.text for m in self.messages)
+
+    @property
+    def label(self) -> str:
+        """The script rule and step that answered it, for reports."""
+        return f"{self.rule or 'unscripted'} step {self.step}"

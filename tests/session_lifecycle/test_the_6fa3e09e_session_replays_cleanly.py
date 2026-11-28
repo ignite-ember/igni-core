@@ -8,8 +8,9 @@ from collections.abc import Iterator
 
 import pytest
 
+from tests.session_lifecycle.constants import RIG_CONFIG
 from tests.session_lifecycle.invariant_checker import InvariantChecker
-from tests.session_lifecycle.lifecycle_rig import RIG_CONFIG, LifecycleRig
+from tests.session_lifecycle.lifecycle_rig import LifecycleRig
 from tests.session_lifecycle.schemas.model_turn import ModelTurn
 from tests.session_lifecycle.schemas.scripted_tool_call import ScriptedToolCall
 from tests.session_lifecycle.verdict import Verdict

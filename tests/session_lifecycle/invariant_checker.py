@@ -5,25 +5,12 @@ from __future__ import annotations
 import asyncio
 import time
 
+from tests.session_lifecycle.constants import PROMPT_TOKENS, RUN_FRAMES, SECRET_CANARY
 from tests.session_lifecycle.lifecycle_client import LifecycleClient
-from tests.session_lifecycle.lifecycle_rig import SECRET_CANARY, LifecycleRig
+from tests.session_lifecycle.lifecycle_rig import LifecycleRig
 from tests.session_lifecycle.schemas.expected_turn import ExpectedTurn, TurnFate
 from tests.session_lifecycle.schemas.recorded_request import RecordedRequest
 from tests.session_lifecycle.schemas.violation import Violation
-
-# Run frames: what a working run sends. None may follow a cancel.
-PROMPT_TOKENS = 100
-
-RUN_FRAMES = frozenset(
-    {
-        "run_started",
-        "content_delta",
-        "tool_started",
-        "tool_completed",
-        "model_completed",
-        "run_paused",
-    }
-)
 
 
 class InvariantChecker:
@@ -108,7 +95,7 @@ class InvariantChecker:
                         "single-run",
                         step,
                         f"two model streams of one conversation at once: #{a.index} "
-                        f"({_label(a)}) and #{b.index} ({_label(b)})",
+                        f"({a.label}) and #{b.index} ({b.label})",
                     )
 
     def _check_history(self, step: str, request: RecordedRequest) -> None:
@@ -140,7 +127,7 @@ class InvariantChecker:
                 self.fail(
                     "history",
                     step,
-                    f"request #{request.index} ({_label(request)}) lost the {turn.fate} "
+                    f"request #{request.index} ({request.label}) lost the {turn.fate} "
                     f"turn {turn.text!r}",
                 )
         if positions != sorted(positions):
@@ -223,7 +210,7 @@ class InvariantChecker:
                 "quiet-after-cancel",
                 step,
                 f"{len(late_calls)} model call(s) after the cancel: "
-                f"{[(r.index, _label(r)) for r in late_calls]}",
+                f"{[(r.index, r.label) for r in late_calls]}",
             )
         late_frames = [
             f.type
@@ -329,7 +316,3 @@ class InvariantChecker:
                 f"the session's saved total is {total} input tokens; its completed model calls "
                 f"used {expected}",
             )
-
-
-def _label(request: RecordedRequest) -> str:
-    return f"{request.rule or 'unscripted'} step {request.step}"

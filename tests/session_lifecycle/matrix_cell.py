@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import time
 
+from tests.session_lifecycle.constants import LONG_TEXT
 from tests.session_lifecycle.enums.matrix_action import MatrixAction
 from tests.session_lifecycle.enums.matrix_state import MatrixState
 from tests.session_lifecycle.invariant_checker import InvariantChecker
@@ -14,8 +15,6 @@ from tests.session_lifecycle.lifecycle_rig import LifecycleRig
 from tests.session_lifecycle.schemas.model_turn import ModelTurn
 from tests.session_lifecycle.schemas.scripted_tool_call import ScriptedToolCall
 from tests.session_lifecycle.schemas.violation import Violation
-
-LONG_TEXT = "Here is a long answer that keeps streaming while the person acts. " * 4
 
 
 class MatrixCell:

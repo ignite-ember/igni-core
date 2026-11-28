@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from tests.session_lifecycle.constants import RIG_CONFIG
 from tests.session_lifecycle.enums.matrix_state import MatrixState
-from tests.session_lifecycle.lifecycle_rig import RIG_CONFIG, LifecycleRig
+from tests.session_lifecycle.lifecycle_rig import LifecycleRig
 
 
 class RowRigs:

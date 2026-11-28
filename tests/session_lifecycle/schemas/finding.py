@@ -15,3 +15,20 @@ class Finding(BaseModel):
     masks: frozenset[str] = Field(
         default_factory=frozenset, description="Findings whose effect it can cancel out."
     )
+
+    @classmethod
+    def of(
+        cls,
+        finding_id: str,
+        title: str,
+        *invariants: str,
+        racy: bool = False,
+        masks: tuple[str, ...] = (),
+    ) -> Finding:
+        return cls(
+            finding_id=finding_id,
+            title=title,
+            invariants=frozenset(invariants),
+            racy=racy,
+            masks=frozenset(masks),
+        )

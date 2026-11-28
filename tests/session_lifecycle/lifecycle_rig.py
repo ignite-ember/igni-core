@@ -7,23 +7,11 @@ import shutil
 from pathlib import Path
 
 from tests.session_lifecycle.backend_process import BackendProcess
+from tests.session_lifecycle.constants import SECRET_CANARY
 from tests.session_lifecycle.lifecycle_client import LifecycleClient
 from tests.session_lifecycle.model_script import ModelScript
 from tests.session_lifecycle.scripted_model_server import ScriptedModelServer
 from tests.session_lifecycle.state_db import StateDb
-
-# The rig's permissions: the sleeps the tool and background states run are allowed,
-RIG_CONFIG = (
-    "permissions:\n"
-    "  allow:\n"
-    '    - "Bash(sleep *)"\n'
-    "safety:\n"
-    "  bypass_guard:\n"
-    "    use_model: false\n"
-)
-
-# Planted in every secret file of the rig; no request to the model may contain it.
-SECRET_CANARY = "IGNI-CANARY-7f3a9c1e-do-not-send"
 
 
 class LifecycleRig:

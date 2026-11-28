@@ -9,10 +9,14 @@ from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
+from openai.types.chat.chat_completion_chunk import ChatCompletionChunk
+
+from tests.session_lifecycle.exceptions.stream_closed_error import StreamClosedError
 from tests.session_lifecycle.model_script import ModelScript
 from tests.session_lifecycle.schemas.model_turn import ModelTurn
 from tests.session_lifecycle.schemas.recorded_message import RecordedMessage
 from tests.session_lifecycle.schemas.recorded_request import RecordedRequest
+from tests.session_lifecycle.turn_encoder import TurnEncoder
 
 
 class ScriptedModelServer:
@@ -99,7 +103,7 @@ class ScriptedModelServer:
     # ── Called by the handler ────────────────────────────────────
 
     def record(self, body: dict[str, Any]) -> tuple[RecordedRequest, ModelTurn]:
-        messages = [_message(m) for m in body.get("messages") or []]
+        messages = [RecordedMessage.from_wire(m) for m in body.get("messages") or []]
         tools = [str((t.get("function") or {}).get("name", "")) for t in body.get("tools") or []]
         rule, step, turn = self.script.choose(messages, has_tools=bool(tools))
         with self._lock:
@@ -124,29 +128,6 @@ class ScriptedModelServer:
             live.outcome = outcome  # type: ignore[assignment]
             live.finished_at = time.monotonic()
             self._lock.notify_all()
-
-
-def _text(content: Any) -> str:
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        return "".join(str(part.get("text", "")) for part in content if isinstance(part, dict))
-    return ""
-
-
-def _message(raw: dict[str, Any]) -> RecordedMessage:
-    calls = raw.get("tool_calls") or []
-    return RecordedMessage(
-        role=str(raw.get("role", "")),
-        text=_text(raw.get("content")),
-        tool_call_names=[str((c.get("function") or {}).get("name", "")) for c in calls],
-        tool_call_ids=[str(c.get("id", "")) for c in calls],
-        tool_call_id=raw.get("tool_call_id"),
-    )
-
-
-class _StreamClosedError(Exception):
-    """igni closed the connection while the turn was streaming."""
 
 
 class _ScriptedHandler(BaseHTTPRequestHandler):
@@ -174,42 +155,36 @@ class _ScriptedHandler(BaseHTTPRequestHandler):
             owner.finish(request, "errored")
             return
         try:
+            encoder = TurnEncoder(turn, request.model or owner.model_id, request.index)
             if request.stream:
-                self._stream(owner, turn, request.model or owner.model_id, request.index)
+                self._stream(owner, encoder)
             else:
-                self._send_json(200, json.dumps(_completion(turn, owner.model_id)).encode())
-        except (_StreamClosedError, BrokenPipeError, ConnectionResetError):
+                self._send_json(200, encoder.completion().model_dump_json().encode())
+        except (StreamClosedError, BrokenPipeError, ConnectionResetError):
             owner.finish(request, "aborted")
             self.close_connection = True
             return
         owner.finish(request, "completed")
 
-    def _stream(
-        self, owner: ScriptedModelServer, turn: ModelTurn, model: str, request_index: int
-    ) -> None:
+    def _stream(self, owner: ScriptedModelServer, encoder: TurnEncoder) -> None:
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")
         self.send_header("Connection", "close")
         self.end_headers()
         self.close_connection = True
-        chunks = _chunks(turn, request_index)
+        turn = encoder.turn
+        deltas = encoder.deltas()
         # Held after the first chunk that says something, not the bare role.
-        hold_at = min(1, len(chunks) - 1)
-        for i, delta in enumerate(chunks):
-            self._event(_chunk(model, delta, None))
+        hold_at = min(1, len(deltas) - 1)
+        for i, delta in enumerate(deltas):
+            self._event(encoder.chunk(delta))
             if i == hold_at and turn.hold:
                 self._hold(owner, turn.hold)
             elif turn.chunk_delay:
                 self._sleep_alive(turn.chunk_delay)
-        finish = "tool_calls" if turn.tool_calls else "stop"
-        self._event(_chunk(model, {}, finish))
-        usage = {
-            "prompt_tokens": turn.prompt_tokens,
-            "completion_tokens": turn.completion_tokens,
-            "total_tokens": turn.prompt_tokens + turn.completion_tokens,
-        }
-        self._event({**_chunk(model, None, None), "choices": [], "usage": usage})
+        self._event(encoder.finish_chunk())
+        self._event(encoder.usage_chunk())
         self._write(b"data: [DONE]\n\n")
 
     def _hold(self, owner: ScriptedModelServer, name: str) -> None:
@@ -217,7 +192,7 @@ class _ScriptedHandler(BaseHTTPRequestHandler):
         deadline = time.monotonic() + ScriptedModelServer.HOLD_LIMIT_SECONDS
         while not gate.wait(0.05):
             if time.monotonic() > deadline:
-                raise _StreamClosedError(f"gate {name!r} was never released")
+                raise StreamClosedError(f"gate {name!r} was never released")
             self._write(b": held\n\n")
 
     def _sleep_alive(self, seconds: float) -> None:
@@ -226,15 +201,15 @@ class _ScriptedHandler(BaseHTTPRequestHandler):
             time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
             self._write(b": waiting\n\n")
 
-    def _event(self, payload: dict[str, Any]) -> None:
-        self._write(f"data: {json.dumps(payload)}\n\n".encode())
+    def _event(self, chunk: ChatCompletionChunk) -> None:
+        self._write(f"data: {chunk.model_dump_json(exclude_none=True)}\n\n".encode())
 
     def _write(self, data: bytes) -> None:
         try:
             self.wfile.write(data)
             self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError, OSError) as exc:
-            raise _StreamClosedError(str(exc)) from exc
+            raise StreamClosedError(str(exc)) from exc
 
     def _send_json(self, status: int, body: bytes) -> None:
         self.send_response(status)
@@ -245,75 +220,3 @@ class _ScriptedHandler(BaseHTTPRequestHandler):
 
     def log_message(self, format: str, *args: object) -> None:  # noqa: A002 — the stdlib's name
         return
-
-
-def _chunks(turn: ModelTurn, request_index: int) -> list[dict[str, Any]]:
-    """The deltas of ``turn``: the role, reasoning, text, then each tool call."""
-    size = max(1, turn.chunk_size)
-    deltas: list[dict[str, Any]] = [{"role": "assistant", "content": ""}]
-    for i in range(0, len(turn.reasoning), size):
-        deltas.append({"reasoning_content": turn.reasoning[i : i + size]})
-    for i in range(0, len(turn.text), size):
-        deltas.append({"content": turn.text[i : i + size]})
-    for index, call in enumerate(turn.tool_calls):
-        call_id = call.call_id or f"call_{request_index}_{index}"
-        arguments = json.dumps(call.arguments)
-        deltas.append(
-            {
-                "tool_calls": [
-                    {
-                        "index": index,
-                        "id": call_id,
-                        "type": "function",
-                        "function": {"name": call.name, "arguments": ""},
-                    }
-                ]
-            }
-        )
-        for i in range(0, len(arguments), size):
-            deltas.append(
-                {
-                    "tool_calls": [
-                        {"index": index, "function": {"arguments": arguments[i : i + size]}}
-                    ]
-                }
-            )
-    return deltas
-
-
-def _chunk(model: str, delta: dict[str, Any] | None, finish: str | None) -> dict[str, Any]:
-    return {
-        "id": "chatcmpl-scripted",
-        "object": "chat.completion.chunk",
-        "created": int(time.time()),
-        "model": model,
-        "choices": [] if delta is None else [{"index": 0, "delta": delta, "finish_reason": finish}],
-    }
-
-
-def _completion(turn: ModelTurn, model: str) -> dict[str, Any]:
-    calls = [
-        {
-            "id": call.call_id or f"call_x_{i}",
-            "type": "function",
-            "function": {"name": call.name, "arguments": json.dumps(call.arguments)},
-        }
-        for i, call in enumerate(turn.tool_calls)
-    ]
-    message: dict[str, Any] = {"role": "assistant", "content": turn.text or None}
-    if calls:
-        message["tool_calls"] = calls
-    return {
-        "id": "chatcmpl-scripted",
-        "object": "chat.completion",
-        "created": int(time.time()),
-        "model": model,
-        "choices": [
-            {"index": 0, "message": message, "finish_reason": "tool_calls" if calls else "stop"}
-        ],
-        "usage": {
-            "prompt_tokens": turn.prompt_tokens,
-            "completion_tokens": turn.completion_tokens,
-            "total_tokens": turn.prompt_tokens + turn.completion_tokens,
-        },
-    }

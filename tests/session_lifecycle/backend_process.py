@@ -9,15 +9,12 @@ import secrets
 import signal
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 from pathlib import Path
 
 from igni_core.backend.schemas_rpc import BackendReadyLine as BackendReady
-
-# Shared by every backend the harness starts (``HF_HOME``), so models download once.
-SHARED_HF_CACHE = Path(tempfile.gettempdir()) / "igni-e2e-hf-cache"
+from tests.session_lifecycle.constants import SHARED_HF_CACHE
 
 
 class BackendProcess:

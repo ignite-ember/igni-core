@@ -6,9 +6,10 @@ from pathlib import Path
 
 import pytest
 
+from tests.session_lifecycle.constants import RIG_CONFIG
 from tests.session_lifecycle.enums.matrix_action import MatrixAction
 from tests.session_lifecycle.enums.matrix_state import MatrixState
-from tests.session_lifecycle.lifecycle_rig import RIG_CONFIG, LifecycleRig
+from tests.session_lifecycle.lifecycle_rig import LifecycleRig
 from tests.session_lifecycle.matrix_cell import MatrixCell
 
 pytestmark = [pytest.mark.session_lifecycle]

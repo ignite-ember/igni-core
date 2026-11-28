@@ -33,24 +33,13 @@ class KnownFindings(BaseModel):
         return cls(finding_ids=list(ids), invariants=invariants, strict=strict)
 
 
-def _finding(
-    finding_id: str, title: str, *invariants: str, racy: bool = False, masks: tuple[str, ...] = ()
-) -> tuple[str, Finding]:
-    return finding_id, Finding(
-        finding_id=finding_id,
-        title=title,
-        invariants=frozenset(invariants),
-        racy=racy,
-        masks=frozenset(masks),
-    )
-
-
-FINDINGS: dict[str, Finding] = dict(
-    [
-        _finding(
+FINDINGS: dict[str, Finding] = {
+    f.finding_id: f
+    for f in [
+        Finding.of(
             "F01", "a message sent while a turn is paused cannot see the paused turn", "history"
         ),
-        _finding(
+        Finding.of(
             "F02",
             "Stop on a paused turn leaves the session running for ever",
             "cancel-clears",
@@ -58,7 +47,7 @@ FINDINGS: dict[str, Finding] = dict(
             "persisted",
             "stop-affordance",
         ),
-        _finding(
+        Finding.of(
             "F03",
             "Stop while a reply streams can wedge the session: nothing is answered again",
             "answers",
@@ -67,64 +56,66 @@ FINDINGS: dict[str, Finding] = dict(
             "stop-affordance",
             racy=True,
         ),
-        _finding("F04", "a cancelled turn disappears from what the model is shown", "history"),
-        _finding(
+        Finding.of("F04", "a cancelled turn disappears from what the model is shown", "history"),
+        Finding.of(
             "F05",
             "a turn whose model call failed disappears from what the model is shown",
             "history",
         ),
-        _finding(
+        Finding.of(
             "F06",
             "approvals a new message drops are never withdrawn from the windows",
             "stop-affordance",
         ),
-        _finding(
+        Finding.of(
             "F07", "a run that paused is counted again in the session's tokens", "tokens-once"
         ),
-        _finding(
+        Finding.of(
             "F08",
             "the session's token total loses a run that ran beside another save",
             "tokens-lost",
             racy=True,
             masks=("F07",),
         ),
-        _finding(
+        Finding.of(
             "F09",
             "an approval answer that resumes nothing starts the queued message beside the resumed run",
             "single-run",
             "history",
         ),
-        _finding("F10", "two quick follow-ups reach the model in the wrong order", "history"),
-        _finding("F11", "/fork during a turn leaves that turn out of the fork", "history"),
-        _finding(
+        Finding.of("F10", "two quick follow-ups reach the model in the wrong order", "history"),
+        Finding.of("F11", "/fork during a turn leaves that turn out of the fork", "history"),
+        Finding.of(
             "F12",
             "after a restart the interrupted-run note repeats a turn the model already sees",
             "history",
             racy=True,
         ),
-        _finding(
+        Finding.of(
             "F13",
             "/clear carries a paused approval into the new chat, where answering it wedges the session",
             "goes-idle",
             "persisted",
             "stop-affordance",
         ),
-        _finding("F14", "Bypass shows the model .env and igni's own credentials file", "no-secret"),
-        _finding("F15", "nothing ends a turn whose model keeps calling tools", "bounded-run"),
-        _finding(
+        Finding.of(
+            "F14", "Bypass shows the model .env and igni's own credentials file", "no-secret"
+        ),
+        Finding.of("F15", "nothing ends a turn whose model keeps calling tools", "bounded-run"),
+        Finding.of(
             "F16",
             "a cancelled run's model call is missing from the session's token total",
             "tokens-lost",
             racy=True,
         ),
-        _finding(
+        Finding.of(
             "F17",
             "a resumed run that ends after /fork or /clear is announced but not saved in that chat",
             "persisted",
             racy=True,
         ),
     ]
-)
+}
 
 # cell id (``state.action``, or a scenario's id) -> the findings that turn it red.
 # A cell whose findings are all races (or masked by one) is a non-strict xfail: Linux CI
