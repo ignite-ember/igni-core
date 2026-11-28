@@ -106,7 +106,7 @@ class RunController:
     _drop_approvals: Callable[[], int] | None = None
     #: Drops them for a new message, and keeps each paused run's turn in
     #: the history with its calls declined (:meth:`HitlController.abandon_waiting`).
-    _abandon_approvals: Callable[[], Awaitable[int]] | None = None
+    _abandon_approvals: Callable[[], Awaitable[list[str]]] | None = None
     #: Sends a message to every client of the session: where the stream of
     #: a run a cancel ended paused gets its end (:meth:`stream_to`).
     _send: Callable[[msg.Message], Awaitable[None]] | None = None
@@ -121,7 +121,7 @@ class RunController:
         gate: RunGate,
         http_client_manager: ModelHttpClientManager | None = None,
         drop_approvals: Callable[[], int] | None = None,
-        abandon_approvals: Callable[[], Awaitable[int]] | None = None,
+        abandon_approvals: Callable[[], Awaitable[list[str]]] | None = None,
     ) -> None:
         self._session = session
         self._drop_approvals = drop_approvals
@@ -306,25 +306,28 @@ class RunController:
         parent run still holds the lock, passes through: the parent is the
         session's run already.
         """
-        if self._run_tasks and not self._stream_ended_paused:
-            relay = self._relay(stream, self._passengers)
-            async with contextlib.aclosing(relay) as frames:
-                async for proto in frames:
-                    yield proto
-            return
-        # A run that paused may still be closing (its checkpoint, its model
-        # client) when a quick answer arrives: the lock waits for it to let go.
-        async with self._run_lock:
-            self._stream_ended_paused = False
-            self._turn_working = True
-            try:
-                self._transition_to(RunPhase.streaming)
-                relay = self._relay(self._continued(stream), self._run_tasks)
+        # The chat of the run that paused, though New chat may have moved
+        # the session on since: what it streams is that chat's.
+        with run_session(self._run_session_id or self._session.session_id):
+            if self._run_tasks and not self._stream_ended_paused:
+                relay = self._relay(stream, self._passengers)
                 async with contextlib.aclosing(relay) as frames:
                     async for proto in frames:
                         yield proto
-            finally:
-                self._turn_working = False
+                return
+            # A run that paused may still be closing (its checkpoint, its model
+            # client) when a quick answer arrives: the lock waits for it to let go.
+            async with self._run_lock:
+                self._stream_ended_paused = False
+                self._turn_working = True
+                try:
+                    self._transition_to(RunPhase.streaming)
+                    relay = self._relay(self._continued(stream), self._run_tasks)
+                    async with contextlib.aclosing(relay) as frames:
+                        async for proto in frames:
+                            yield proto
+                finally:
+                    self._turn_working = False
 
     async def _continued(
         self, stream: AsyncIterator[msg.Message]
@@ -423,10 +426,13 @@ class RunController:
         its tool in the middle of the new conversation. That includes the
         ones a previous backend left, which no paused message here names.
         Each paused run's turn stays in the history, its waiting calls
-        declined, so the new message is read after it.
+        declined, so the new message is read after it, and every window
+        withdraws their dialogs.
         """
         if self._abandon_approvals is not None:
-            dropped = await self._abandon_approvals()
+            withdrawn = await self._abandon_approvals()
+            await self._withdraw(withdrawn)
+            dropped = len(withdrawn)
         else:
             dropped = self._drop_approvals() if self._drop_approvals is not None else 0
         if dropped:
@@ -438,6 +444,23 @@ class RunController:
         if self._pending_id_for_cancel == pending_id:
             self._pending_id_for_cancel = None
         await self._pending_journal.mark_completed(pending_id)
+
+    async def _withdraw(self, requirement_ids: list[str]) -> None:
+        """Tell every window of the paused run's chat that these approvals are gone."""
+        send = self._send
+        if send is None:
+            return
+        chat = self._run_session_id or self._session.session_id
+        for requirement_id in requirement_ids:
+            await send(msg.RequirementResolved(requirement_id=requirement_id, session_id=chat))
+
+    async def end_paused_turn(self) -> None:
+        """The session moves off its chat (``/clear``, ``/fork``): a turn paused
+        on the person ends there as a new message ends it; a working turn goes on."""
+        if self._run_lock.locked() and not self._stream_ended_paused:
+            return
+        async with self._run_lock:
+            await self._close_abandoned_pause()
 
     async def run_unstreamed(self, work: Callable[[], Awaitable[_T]]) -> _T:
         """Work on the session's team outside a streamed turn — a scheduled

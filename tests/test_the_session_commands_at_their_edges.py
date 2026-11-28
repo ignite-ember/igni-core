@@ -37,6 +37,7 @@ class FakeSession:
         self.context_budget = ContextBudget(window=1000, last_input_tokens=777)
         self.identity = Identity(named)
         self.on_new_dialogue = hook
+        self.on_leave_dialogue = None
         self.persistence = SimpleNamespace(
             rename=AsyncMock(return_value=PersistResult(ok=True)),
             get_name=AsyncMock(return_value="stored"),

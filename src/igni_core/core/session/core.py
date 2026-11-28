@@ -97,6 +97,8 @@ class Session(SessionSurface):
     #: that attempt did: the portal being unreachable is an expected
     #: failure and comes back in the result, not as an exception.
     on_new_dialogue: Callable[[], Awaitable[PolicyRevalidation]] | None
+    on_leave_dialogue: Callable[[], Awaitable[None]] | None
+    """Fired before ``/clear`` or ``/fork`` moves off the chat; the backend ends a paused turn."""
 
     def __init__(
         self,
@@ -114,6 +116,7 @@ class Session(SessionSurface):
         self.permission_evaluator = None
         # The backend installs this; a session nobody drives has none.
         self.on_new_dialogue = None
+        self.on_leave_dialogue = None
         #: The session ids the ``SessionStart`` hook fired for, and what it
         #: last said for the agent, until a turn carries it.
         self._session_start_fired: set[str] = set()

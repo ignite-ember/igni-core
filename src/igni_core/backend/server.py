@@ -191,6 +191,8 @@ class BackendServer:
         self._workspace_trust = WorkspaceTrustController(session.project_dir)
         # A new dialogue should pick up an admin's change.
         session.on_new_dialogue = controllers.group_policy.revalidate_for_new_dialogue
+        # Leaving a chat ends a turn paused there, as a new message would.
+        session.on_leave_dialogue = controllers.runs.end_paused_turn
 
     # ── Runtime + session identity ────────────────────────────────
 
