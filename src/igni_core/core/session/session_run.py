@@ -35,6 +35,7 @@ from igni_core.core.config.settings import Settings
 from igni_core.core.hooks.events import HookEvent
 from igni_core.core.session.core import Session
 from igni_core.core.session.schemas import MessageMedia, SessionLifecyclePayload
+from igni_core.core.utils.attached_pdf_text import AttachedPdfText
 from igni_core.core.utils.display_schemas import RunStats
 from igni_core.core.utils.media import MediaResolver
 from igni_core.core.utils.media_schemas import MediaAttachments
@@ -141,6 +142,7 @@ class SessionRun(ABC):
         session.media_guard.begin_turn(notices.unseen.files, notices.unattached.files)
         for line in notices.user_notices(models.default):
             display.print_info(line)
+        message = AttachedPdfText.collect(resolution.attachable).wrap(message)
 
         media: MessageMedia | None = None
         if attachments is not None:
