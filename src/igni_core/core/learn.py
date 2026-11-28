@@ -11,7 +11,10 @@ and their tests. Rule 6 "OOP is mandatory" §Exceptions clause applies:
 stateless leaf, no shared subject, no module-level state.
 """
 
+import asyncio
+import functools
 import logging
+from collections.abc import Callable
 from textwrap import dedent
 from typing import Any
 
@@ -21,12 +24,48 @@ from agno.learn.stores import UserMemoryStore
 from pydantic import BaseModel, ConfigDict
 
 from igni_core.core.config.settings import Settings
+from igni_core.core.memory.memory_change_report import MemoryChangeReport
+from igni_core.core.memory.stored_memory import StoredMemory
 
 logger = logging.getLogger(__name__)
 
 
 class TrainedUserMemoryStore(UserMemoryStore):
-    """Agno 3's user-memory store, rendering its system-prompt block as Agno 2.6 did."""
+    """Agno 3's user-memory store: 2.6's prompt block, serial writes, replies read from the store."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        # Each write upserts the whole record, so parallel writes drop each other's memories.
+        self._writes = asyncio.Lock()
+
+    async def _aget_extraction_tools(self, *args: Any, **kwargs: Any) -> list[Callable]:
+        """Agno's extraction tools, each holding the store's write lock while it runs."""
+        tools = await super()._aget_extraction_tools(*args, **kwargs)
+        return [self._one_at_a_time(tool) for tool in tools]
+
+    def _one_at_a_time(self, tool: Callable) -> Callable:
+        @functools.wraps(tool)
+        async def locked(*args: Any, **kwargs: Any) -> Any:
+            async with self._writes:
+                return await tool(*args, **kwargs)
+
+        return locked
+
+    def extract_and_save(self, messages: Any, user_id: str, *args: Any, **kwargs: Any) -> str:
+        """Agno's extraction, answered with the memories it saved, updated or deleted."""
+        before = StoredMemory.all_of(self.get(user_id=user_id))
+        super().extract_and_save(messages, user_id, *args, **kwargs)
+        after = StoredMemory.all_of(self.get(user_id=user_id))
+        return MemoryChangeReport(before=before, after=after).reply()
+
+    async def aextract_and_save(
+        self, messages: Any, user_id: str, *args: Any, **kwargs: Any
+    ) -> str:
+        """Agno's extraction, answered with the memories it saved, updated or deleted."""
+        before = StoredMemory.all_of(await self.aget(user_id=user_id))
+        await super().aextract_and_save(messages, user_id, *args, **kwargs)
+        after = StoredMemory.all_of(await self.aget(user_id=user_id))
+        return MemoryChangeReport(before=before, after=after).reply()
 
     def instructions(self) -> str:
         # The guidance is inside ``build_context``'s block, where 2.6 put it.
