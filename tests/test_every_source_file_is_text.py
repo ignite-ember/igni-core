@@ -120,7 +120,7 @@ def test_no_source_file_contains_a_control_byte():
 @needs_app
 @pytest.mark.parametrize(
     "path",
-    ["clients/web/src/components/panels/HooksPanel.tsx"],
+    ["clients/web/src/components/panels/hooks/hooksView.ts"],
 )
 def test_the_file_that_motivated_this_is_readable(path):
     """The specific case, pinned.
