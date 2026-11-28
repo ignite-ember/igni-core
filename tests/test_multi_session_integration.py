@@ -867,7 +867,7 @@ async def test_cancel_targets_only_the_emitting_session():
         elif isinstance(m, msg.Cancel):
             # Use the runtime's real ``cancel_run`` mock to record
             # which runtime was targeted. Real BackendServer's
-            # ``cancel_run`` cancels ``_current_run_task``; the
+            # ``cancel_run`` cancels every run task; the
             # invariant we care about is *which* runtime's hook got
             # called, not what cancellation actually does.
             rt.backend.cancel_run()

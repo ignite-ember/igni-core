@@ -126,7 +126,18 @@ Bypass (`--auto-approve`) still checks every non-read call before it runs:
 rules for actions that are dangerous by their shape (deleting outside the
 project, `curl | sh`, force-pushing, sending credentials off the machine…),
 then Laya, a small typed-decision model, for what no rule names. A call
-either flags is turned back into the ordinary approval prompt.
+either flags is turned back into the ordinary approval prompt. A shell
+command built only from the read-only allow-list (below) is a read: it runs
+without going to Laya, unless it prints a private key or credential file
+(`cat ~/.ssh/id_rsa`), which is asked about.
+
+Reads are not checked, except a read of a credential or key file: a
+private key, a cloud or registry credential, and igni's own key stores in
+the home config directory — `~/.igni/config.yaml` (the model registry's API
+keys), `~/.igni/credentials.json` (the cloud sign-in token) and their
+backups. Reading one asks first, by a file read or a shell command alike; so
+does a shell read of a glob over `~/.igni` or of the directory itself
+(`grep -r key ~/.igni`).
 
 Laya does not run inside the backend. It runs in **igni's decisions
 service** (`python -m igni_core.decisions_server`), which brings torch and
@@ -141,11 +152,12 @@ the model's checkpoints:
   service's `IGNI_DECISIONS_SECRET`). The service answers approvals before
   anything an extension asks, across every backend it serves.
 
-**It fails closed.** If the service cannot be started or reached, or the
-model cannot load — including an install without the `decisions` extra — the
-check cannot run, and a call that would have been checked is *asked about*,
-never let through. A headless run with nobody to ask refuses it with the
-reason.
+**Without Laya, the rules decide.** If the service cannot be started or
+reached, or the model cannot load — including an install without the
+`decisions` extra — a call a rule flags is still asked about, and anything
+else runs. The backend logs a warning once per process saying why and that
+installing `igni-core[decisions]` turns the model back on. A headless run
+with nobody to ask refuses a flagged call with the reason.
 
 #### What `--read-only` does
 
@@ -154,7 +166,8 @@ covers your files and the web:
 
 - **Runs without asking:** a shell command built entirely from the read-only
   allow-list — `cat`, `ls`, `head`, `tail`, `wc`, `rg`, `grep`, `find`
-  (without `-exec`/`-delete`), `diff`, `stat`, `jq`, `git status`/`log`/
+  (without `-exec`/`-delete`), `diff`, `stat`, `jq`, `file` (without `-C`),
+  `sed` (printing only: `sed -n '1,80p'`, never `-i`, `w` or `s///`), `git status`/`log`/
   `diff`/`show`/`blame`/`ls-files`/`grep`/`branch` (listing), and pipes
   between them. igni has no read tool, so this is how the agent reads your
   working tree. Also `web_search`, `search_news`, `fetch_url` and `fetch_json`
@@ -324,7 +337,7 @@ to standard output as the `audit` section of a JSON log record on the
 | `tool` | The tool's function name (`run_shell_command`, `edit_file`, an MCP or extension tool's name) |
 | `status` | `success` — ran and returned; `error` — ran and failed; `blocked` — refused before it ran |
 | `details.decision` | `allow` or `deny` |
-| `details.decided_by` | What decided: `rule` (a `permissions.allow` / `ask` / `deny` rule), `mode` (the permission mode, `--read-only` included), `policy` (nothing more specific — the tool's configured level), `hook` (a `PreToolUse` hook), `extension` (an extension's `PreToolUse` hook), `person` (an approval prompt answered), `protected_path`, `blocked_command`, `bypass_guard` |
+| `details.decided_by` | What decided: `rule` (a `permissions.allow` / `ask` / `deny` rule), `mode` (the permission mode, `--read-only` included), `policy` (nothing more specific — the tool's configured level), `hook` (a `PreToolUse` hook), `extension` (an extension's `PreToolUse` hook), `person` (an approval prompt answered), `protected_path`, `blocked_command`, `bypass_guard`, `vision_disabled` (a model reading a media file its turn named that it cannot see: a text-only model, or a vision model the file could not be attached for) |
 | `details.mode` | The permission mode the call was decided in, when igni's permission evaluator was asked (not on a sub-agent's call) |
 | `details.reason` | The permission evaluator's own reason — which rule or mode decided, or why the person was asked. Only when the evaluator was consulted |
 | `details.arg_names` | The names of the call's arguments, sorted |

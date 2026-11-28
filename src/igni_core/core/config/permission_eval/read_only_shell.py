@@ -168,6 +168,56 @@ _GIT_SUBCOMMANDS: dict[str, Callable[[Sequence[str]], bool]] = {
 }
 
 
+#: A ``sed`` script that only prints, deletes from the output or quits:
+#: line or ``/regex/`` addresses before ``p``, ``d``, ``q``, ``Q``, ``=``
+#: or ``l``. ``w``, ``e``, ``r`` and ``s///w`` never match.
+_SED_ADDRESS = r"(?:\d+(?:~\d+)?|\$|/(?:[^/\\\n]|\\.)*/I?)"
+_SED_COMMAND = rf"\s*(?:{_SED_ADDRESS}(?:\s*,\s*(?:{_SED_ADDRESS}|\+\d+))?)?\s*!?\s*[pdqQ=l]\s*"
+_SED_PRINT_SCRIPT = re.compile(rf"{_SED_COMMAND}(?:;{_SED_COMMAND})*;?\s*")
+
+#: ``sed`` options that change only how it reads and prints.
+_SED_FLAGS = frozenset(
+    {
+        "--quiet",
+        "--silent",
+        "--regexp-extended",
+        "--separate",
+        "--unbuffered",
+        "--null-data",
+        "--posix",
+        "--debug",
+    }
+)
+_SED_SHORT_FLAGS = frozenset("nErsuz")
+
+
+def _sed_prints(args: Sequence[str]) -> bool:
+    """``sed`` that prints: no ``-i`` or ``-f``, every script a print-only one."""
+    scripts: list[str] = []
+    positional: list[str] = []
+    expect_script = False
+    for arg in args:
+        if expect_script:
+            scripts.append(arg)
+            expect_script = False
+        elif arg in ("-e", "--expression"):
+            expect_script = True
+        elif arg.startswith("--expression="):
+            scripts.append(arg.split("=", 1)[1])
+        elif arg in _SED_FLAGS:
+            continue
+        elif arg.startswith("-") and len(arg) > 1:
+            if not set(arg[1:]) <= _SED_SHORT_FLAGS:
+                return False
+        else:
+            positional.append(arg)
+    if expect_script:
+        return False
+    if not scripts and positional:
+        scripts.append(positional[0])
+    return all(_SED_PRINT_SCRIPT.fullmatch(script) for script in scripts)
+
+
 def _git_reads(args: Sequence[str]) -> bool:
     """``git <read-only subcommand> ...``. A global option before the
     subcommand is refused: ``-c`` can name a pager or diff program, and
@@ -212,6 +262,8 @@ READ_ONLY_COMMANDS: dict[str, Callable[[Sequence[str]], bool]] = {
     "nl": _always,
     "jq": _always,
     "sort": _refuses_short("o", "--output", "--compress-program"),
+    "sed": _sed_prints,
+    "file": _refuses_short("C", "--compile"),
 }
 
 

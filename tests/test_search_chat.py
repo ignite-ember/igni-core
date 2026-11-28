@@ -30,6 +30,8 @@ from igni_core.backend.schemas_history import (
 )
 from igni_core.backend.server import BackendServer
 from igni_core.backend.server_sessions import SessionsController
+from igni_core.core.session.persistence.facade import SessionPersistence
+from igni_core.core.session.schemas import LoadResult, SessionListRow
 from igni_core.protocol.rpc import RpcMethod
 from tests.backend_server_factory import make_backend
 from tests.rpc_tables import rpc_table_for
@@ -353,3 +355,73 @@ class TestACharacterWhoseLowercaseIsLonger:
         hit = _search([_turn("x İ y")], "İ", limit=5)[0]
 
         assert hit.snippet[hit.match_start : hit.match_end] == "İ"
+
+
+# ── BackendServer.search_all_chats → SessionsController ────
+
+
+class TestSearchAllChats:
+    """Every chat is searched through the real :class:`SessionPersistence`
+    listing, whose ``list_sessions`` hands back plain rows; a fake with
+    another shape hid a crash on every call."""
+
+    def _backend(self, chats: dict[str, list[ChatHistoryEntry]], *, listing_ok: bool = True):
+        backend = make_backend(MagicMock(), settings=MagicMock())
+        persistence = SessionPersistence(db=None, session_id="current")
+        rows = [SessionListRow(session_id=sid, name=f"chat {sid}") for sid in chats]
+        persistence._listing.list_sessions = AsyncMock(  # type: ignore[method-assign]
+            return_value=LoadResult(ok=listing_ok, value=rows if listing_ok else None)
+        )
+        backend.session.persistence = persistence
+
+        async def history(session_id: str) -> list[ChatTurn]:
+            return [
+                _CHAT_TURN.validate_python(e.model_dump(mode="json")) for e in chats[session_id]
+            ]
+
+        backend.controllers.sessions = SessionsController(
+            session=backend.session, chat_history_provider=history
+        )
+        return backend
+
+    @pytest.mark.asyncio
+    async def test_finds_what_this_chat_search_finds(self):
+        backend = self._backend({"a": [_turn("the stage report")], "b": [_turn("nothing here")]})
+        one = await backend.search_chat("a", "stage report")
+        everywhere = await backend.search_all_chats("stage report")
+        assert len(one) == 1
+        assert [(h.session_id, h.session_name, h.snippet) for h in everywhere] == [
+            ("a", "chat a", one[0].snippet)
+        ]
+
+    @pytest.mark.asyncio
+    async def test_searches_every_chat_in_listing_order(self):
+        backend = self._backend({"new": [_turn("NEEDLE 1")], "old": [_turn("NEEDLE 2")]})
+        out = await backend.search_all_chats("needle")
+        assert [h.session_id for h in out] == ["new", "old"]
+
+    @pytest.mark.asyncio
+    async def test_limit_caps_hits_across_chats(self):
+        backend = self._backend(
+            {"a": [_turn(f"NEEDLE {i}") for i in range(3)], "b": [_turn("NEEDLE b")]}
+        )
+        out = await backend.search_all_chats("needle", limit=2)
+        assert [h.session_id for h in out] == ["a", "a"]
+
+    @pytest.mark.asyncio
+    async def test_a_listing_failure_finds_nothing_rather_than_raising(self):
+        backend = self._backend({"a": [_turn("NEEDLE")]}, listing_ok=False)
+        assert await backend.search_all_chats("needle") == []
+
+    @pytest.mark.asyncio
+    async def test_empty_query_short_circuits(self):
+        backend = self._backend({"a": [_turn("NEEDLE")]})
+        assert await backend.search_all_chats("  ") == []
+
+    @pytest.mark.asyncio
+    async def test_dispatch_table_routes_search_all_chats(self):
+        backend = self._backend({"a": [_turn("foo NEEDLE bar")]})
+        handler = rpc_table_for(backend, transport=MagicMock()).get(RpcMethod.SEARCH_ALL_CHATS)
+        assert handler is not None
+        out = await handler({"query": "needle", "limit": 50})
+        assert len(out) == 1
