@@ -4,7 +4,10 @@
   :class:`RemoteDecisions`, sending ``IGNI_DECISIONS_TOKEN``;
 * otherwise (a desktop) — :class:`LocalDecisions`, which starts the
   service on first use as its own process on a loopback port, with a
-  per-run secret, and starts it again if it has idled out.
+  per-run secret, and starts it again if it has idled out. It never
+  outlives the backend: stopped at exit, and if the backend dies
+  without one, the service sees its stdin close and its parent go
+  (on Windows the kernel also ends it, through a kill-on-close job).
 
 A service that will not start is
 :class:`~.schemas.DecisionsUnavailable`.
@@ -12,6 +15,7 @@ A service that will not start is
 
 from __future__ import annotations
 
+import atexit
 import os
 import secrets
 import shutil
@@ -26,6 +30,7 @@ from typing import Protocol
 import httpx
 from pydantic import BaseModel, ConfigDict
 
+from igni_core.core.decisions.kill_on_close import KillOnClose
 from igni_core.core.decisions.schemas import DecisionsUnavailable
 
 URL_ENV = "IGNI_DECISIONS_URL"
@@ -74,13 +79,17 @@ class LocalDecisions:
     START_S = 30.0
     #: An unused service exits after this long and gives its memory back.
     IDLE_S = 900
+    #: How long a stopped service may take to exit before it is killed.
+    STOP_S = 10.0
 
     def __init__(self) -> None:
         self._secret = secrets.token_urlsafe(32)
         self._lock = threading.Lock()
         self._process: subprocess.Popen[bytes] | None = None
+        self._job = KillOnClose()
         self._home: Path | None = None
         self._url = ""
+        self._closes_at_exit = False
 
     def connection(self) -> Connection:
         with self._lock:
@@ -93,6 +102,25 @@ class LocalDecisions:
             if self._process is not None and self._process.poll() is None:
                 self._process.terminate()
             self._process = None
+
+    def close(self) -> None:
+        """Stop the service and remove its home: the backend is exiting."""
+        if not self._lock.acquire(timeout=self.STOP_S):
+            return
+        try:
+            process, self._process = self._process, None
+            if process is not None and process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(self.STOP_S)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+            if self._home is not None:
+                shutil.rmtree(self._home, ignore_errors=True)
+                self._home = None
+        finally:
+            self._lock.release()
 
     def _start(self) -> str:
         if self._home is not None:
@@ -113,7 +141,12 @@ class LocalDecisions:
             "--idle-seconds",
             str(self.IDLE_S),
             "--watch-stdin",
+            "--parent-pid",
+            str(os.getpid()),
         ]
+        if not self._closes_at_exit:
+            atexit.register(self.close)
+            self._closes_at_exit = True
         try:
             process = subprocess.Popen(  # noqa: S603 — our own module, by absolute interpreter
                 command, stdin=subprocess.PIPE, stdout=log, stderr=log, env=env
@@ -122,6 +155,7 @@ class LocalDecisions:
             raise DecisionsUnavailable(f"igni's decisions service would not start ({exc})") from exc
         finally:
             log.close()
+        self._job.attach(process)
         deadline = time.monotonic() + self.START_S
         while not ready.exists():
             if process.poll() is not None:
