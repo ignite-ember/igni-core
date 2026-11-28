@@ -223,6 +223,7 @@ CELLS: dict[str, tuple[str, ...]] = {
     "tool.two_follow_ups": ("F10",),
     "idle.two_follow_ups": ("F08",),
     "background.two_follow_ups": ("F07", "F08"),
+    "subagent.deny_feedback": ("F07", "F08"),
     "restarted.two_follow_ups": ("F08",),
     "incident.6fa3e09e": ("F01",),
     "live.paused_follow_up": ("F01",),
