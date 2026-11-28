@@ -1,7 +1,7 @@
 ---
 name: security
 description: Performs security analysis of code to identify vulnerabilities, insecure patterns, and hardcoded secrets.
-tools: WebSearch, Bash
+tools: WebSearch, Bash, ReadDocument
 color: red
 reasoning: false
 reasoning_max_steps: 8

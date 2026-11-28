@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import io
 import re
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
-from pypdf import PdfWriter
-from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
 from igni_core.backend.prompt_builder import PromptBuilder
 from igni_core.core.config.model_entry import ModelRegistryEntry
@@ -20,6 +17,7 @@ from igni_core.core.documents.reader import DocumentReader
 from igni_core.core.hooks.text_only_media_guard import TextOnlyMediaGuard
 from igni_core.core.session.reminders import PendingReminderQueue
 from igni_core.core.session.session_run import SessionRun
+from tests.document_fixtures import DocumentFixtures
 
 CV = [
     ["DMYTRO EXAMPLE", "Principal Software Engineer", "Amsterdam, Netherlands"],
@@ -27,35 +25,7 @@ CV = [
 ]
 
 
-def _pdf(path: Path, pages: list[list[str]]) -> Path:
-    """A PDF whose pages carry ``pages``' lines as real text."""
-    writer = PdfWriter()
-    font = writer._add_object(  # noqa: SLF001 — pypdf has no public way to add a font object
-        DictionaryObject(
-            {
-                NameObject("/Type"): NameObject("/Font"),
-                NameObject("/Subtype"): NameObject("/Type1"),
-                NameObject("/BaseFont"): NameObject("/Helvetica"),
-            }
-        )
-    )
-    for lines in pages:
-        page = writer.add_blank_page(612, 792)
-        shown = " ".join(
-            "(" + line.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)") + ") '"
-            for line in lines
-        )
-        stream = DecodedStreamObject()
-        stream.set_data(f"BT /F1 12 Tf 72 720 Td 14 TL {shown} ET".encode())
-        page[NameObject("/Contents")] = writer._add_object(stream)  # noqa: SLF001
-        page[NameObject("/Resources")] = DictionaryObject(
-            {NameObject("/Font"): DictionaryObject({NameObject("/F1"): font})}
-        )
-    buffer = io.BytesIO()
-    writer.write(buffer)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(buffer.getvalue())
-    return path
+_pdf = DocumentFixtures.pdf
 
 
 def _upload(project: Path, name: str, pages: list[list[str]]) -> Path:
@@ -153,7 +123,9 @@ async def test_a_long_pdf_is_cut_and_says_where(tmp_path, monkeypatch):
 
     assert "--- Page 1 ---\n" + "a" * 15 + "\n--- Page 2 ---\n" + "b" * 5 in block
     assert "c" * 5 not in block
-    assert "[Text truncated at 20 characters.]" in block
+    assert (
+        '[Text truncated at 20 characters. To read on, call read_document with part="2-".]' in block
+    )
     assert "(3 pages)" in block
 
 

@@ -306,6 +306,7 @@ When editing code:
 ### Tool Preferences
 
 - **`run_shell_command`** — your default. Use shell for searching (`rg`, `grep -r`), finding files (`find`, `fd`), listing (`ls`), reading (`cat`, `head`, `tail`, `sed -n`), running tests/builds/linters/git/package managers. Prefer `rg` over `grep` when available.
+- **`read_document`** — for PDF, Word, Excel, PowerPoint, CSV and TSV files. Plain-text and code files are still read with the shell.
 - **`edit_file`** — surgical string replacement in an existing file. Always preferred over `sed`/`awk`/heredoc-rewrites — `sed`'s regex-escaping is a known disaster, `edit_file` is reliable.
 - **`save_file` / `create_file`** — create a brand-new file with known content. `edit_file` cannot create new files.
 

@@ -1,7 +1,7 @@
 ---
 name: plan_researcher
 description: Spawned by `enter_plan_mode` (row 50). Researches the codebase via shell tools (rg / cat / find) and produces a structured research report — Findings, Proposed Plan, Tasks (JSON), Confidence, Open Questions. Read-only; the main agent turns the report into the user-facing exit_plan_mode call.
-tools: Bash, WebFetch, WebSearch
+tools: Bash, WebFetch, WebSearch, ReadDocument
 color: orange
 
 tags:

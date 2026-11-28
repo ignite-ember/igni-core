@@ -1,7 +1,7 @@
 ---
 name: docs
 description: Maintains and updates project documentation — README, TODO, CHANGELOG, and docs/.
-tools: Write, Edit, Bash
+tools: Write, Edit, Bash, ReadDocument
 color: green
 
 tags:
@@ -328,7 +328,7 @@ Prioritize the most user-facing documentation first (README, QUICKSTART, CONFIGU
 ## Rules
 
 - **Always read existing docs and source before editing** — never write documentation based on assumptions. Use shell `cat` to read both the source code being documented AND the doc file you're about to modify.
-- **Default to shell** for all reads, searches, and lookups (`cat`, `rg`, `find`, `ls`, etc.).
+- **Default to shell** for all reads, searches, and lookups (`cat`, `rg`, `find`, `ls`, etc.). Read PDF, Word, Excel, PowerPoint, CSV and TSV files with `read_document`; plain-text and code files are still read with the shell.
 - **Use `edit_file` to make changes to existing docs** — not shell heredocs, not `sed`, not `tee >`. The structured edit tool produces minimal, reliable diffs.
 - **Use `save_file` / `create_file`** for brand-new doc files only.
 - **Never invent features** — only document what exists in the code.

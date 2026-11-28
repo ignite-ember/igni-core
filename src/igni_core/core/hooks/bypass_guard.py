@@ -68,6 +68,7 @@ NOT_RUN = "Not run:"
 READ_ONLY_TOOLS: frozenset[str] = frozenset(
     {
         "read_file",
+        "read_document",
         "list_files",
         "list_directory",
         "grep",

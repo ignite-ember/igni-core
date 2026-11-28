@@ -28,7 +28,7 @@ _FETCH_TOOLS = frozenset({"fetch_url", "fetch_json"})
 #: Read-only file tools that take a path. They are waved through as read-only,
 #: but a read of a *secret* path is exactly the exfil first step that exemption
 #: should not cover, so the guard asks :meth:`ToolKind.secret_read` for these.
-_READ_FILE_TOOLS = frozenset({"read_file", "search_files"})
+_READ_FILE_TOOLS = frozenset({"read_file", "search_files", "read_document"})
 
 
 class ToolKind(StrEnum):

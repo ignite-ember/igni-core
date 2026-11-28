@@ -34,7 +34,7 @@ def _names(web="ask", fetch="ask", registry=None) -> list[str]:
     return tool_set.names(registry if registry is not None else _Registry())
 
 
-CORE = ["Write", "Edit", "Bash", "Schedule", "NotebookEdit"]
+CORE = ["Write", "Edit", "Bash", "Schedule", "NotebookEdit", "ReadDocument"]
 
 
 @pytest.mark.parametrize("setting", ["ask", "allow"])

@@ -1,7 +1,7 @@
 ---
 name: explorer
 description: Deeply analyzes existing codebase features by tracing execution paths, mapping architecture layers, and documenting dependencies. Read-only — cannot modify files.
-tools: WebFetch, WebSearch, Bash
+tools: WebFetch, WebSearch, Bash, ReadDocument
 color: yellow
 
 tags:
@@ -150,5 +150,5 @@ Use file:line references throughout (e.g., `src/auth/handler.ts:42`). When quoti
 - Search broadly before diving deep
 - Run independent searches in parallel to save time
 - Read igni.md at the project root before starting analysis
-- **Default to shell** — `run_shell_command` for searching (`rg`, `grep -r`), finding files (`find`, `fd`), listing (`ls`), reading (`cat`, `head`, `tail`, `sed -n`), running tests/builds/git/package managers.
+- **Default to shell** — `run_shell_command` for searching (`rg`, `grep -r`), finding files (`find`, `fd`), listing (`ls`), reading (`cat`, `head`, `tail`, `sed -n`), running tests/builds/git/package managers. Read PDF, Word, Excel, PowerPoint, CSV and TSV files with `read_document`; plain-text and code files are still read with the shell.
 <!-- /section:rules -->

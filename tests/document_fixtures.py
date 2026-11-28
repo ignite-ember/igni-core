@@ -10,6 +10,8 @@ import docx
 import openpyxl
 import pptx
 from pptx.util import Inches
+from pypdf import PdfWriter
+from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
 
 class DocumentFixtures:
@@ -123,6 +125,72 @@ class DocumentFixtures:
     def password_protected(cls, path: Path) -> Path:
         """An encrypted Office file: a compound document carrying an ``EncryptionInfo`` stream."""
         path.write_bytes(cls.CFB_MAGIC + b"\0" * 56 + "EncryptionInfo".encode("utf-16-le"))
+        return path
+
+    @staticmethod
+    def pdf(path: Path, pages: list[list[str]]) -> Path:
+        """A PDF whose pages carry ``pages``' lines as real text; an empty page has no text layer."""
+        writer = PdfWriter()
+        font = writer._add_object(  # noqa: SLF001 — pypdf has no public way to add a font object
+            DictionaryObject(
+                {
+                    NameObject("/Type"): NameObject("/Font"),
+                    NameObject("/Subtype"): NameObject("/Type1"),
+                    NameObject("/BaseFont"): NameObject("/Helvetica"),
+                }
+            )
+        )
+        for lines in pages:
+            page = writer.add_blank_page(612, 792)
+            shown = " ".join(
+                "(" + line.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)") + ") '"
+                for line in lines
+            )
+            stream = DecodedStreamObject()
+            stream.set_data(f"BT /F1 12 Tf 72 720 Td 14 TL {shown} ET".encode())
+            page[NameObject("/Contents")] = writer._add_object(stream)  # noqa: SLF001
+            page[NameObject("/Resources")] = DictionaryObject(
+                {NameObject("/Font"): DictionaryObject({NameObject("/F1"): font})}
+            )
+        buffer = io.BytesIO()
+        writer.write(buffer)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(buffer.getvalue())
+        return path
+
+    @staticmethod
+    def xlsx_sheets(path: Path, sheets: dict[str, int]) -> Path:
+        """One sheet per name, each a header and ``rows - 1`` numbered rows."""
+        workbook = openpyxl.Workbook()
+        default = workbook.active
+        assert default is not None
+        workbook.remove(default)
+        for name, rows in sheets.items():
+            sheet = workbook.create_sheet(name)
+            sheet.append(["n", name])
+            for i in range(1, rows):
+                sheet.append([i, f"{name}-{i}"])
+        workbook.save(str(path))
+        return path
+
+    @staticmethod
+    def pptx_titles(path: Path, count: int) -> Path:
+        """``count`` slides titled ``Slide 1`` to ``Slide count``."""
+        deck = pptx.Presentation()
+        for n in range(1, count + 1):
+            slide = deck.slides.add_slide(deck.slide_layouts[5])
+            assert slide.shapes.title is not None
+            slide.shapes.title.text = f"Slide {n}"
+        deck.save(str(path))
+        return path
+
+    @staticmethod
+    def docx_paragraphs(path: Path, paragraphs: list[str]) -> Path:
+        """A Word document of ``paragraphs`` and nothing else."""
+        document = docx.Document()
+        for text in paragraphs:
+            document.add_paragraph(text)
+        document.save(str(path))
         return path
 
     @staticmethod

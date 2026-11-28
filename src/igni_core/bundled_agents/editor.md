@@ -1,7 +1,7 @@
 ---
 name: editor
 description: Creates and modifies code files. The primary coding agent for implementation, bug fixes, and refactoring.
-tools: Write, Edit, Bash
+tools: Write, Edit, Bash, ReadDocument
 color: blue
 can_orchestrate: true
 
@@ -302,7 +302,7 @@ If the task is unclear about what exactly to change, err on the side of doing le
 <!-- section:rules -->
 ## Rules
 
-- **Default to shell** — `run_shell_command` for searching (`rg`, `grep -r`), finding files (`find`, `fd`), listing (`ls`), reading (`cat`, `head`, `tail`, `sed -n`), running tests/builds/git/package managers.
+- **Default to shell** — `run_shell_command` for searching (`rg`, `grep -r`), finding files (`find`, `fd`), listing (`ls`), reading (`cat`, `head`, `tail`, `sed -n`), running tests/builds/git/package managers. Read PDF, Word, Excel, PowerPoint, CSV and TSV files with `read_document`; plain-text and code files are still read with the shell.
 - **Use `edit_file` for surgical changes** to existing files — `sed` regex-escaping is fragile; `edit_file` is reliable.
 - **Use `save_file` / `create_file`** for brand-new files only.
 <!-- /section:rules -->

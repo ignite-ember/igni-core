@@ -12,6 +12,7 @@ from igni_core.core.documents.pdf_reader import PdfDocumentReader
 from igni_core.core.documents.pptx_reader import PptxDocumentReader
 from igni_core.core.documents.reader import DocumentReader
 from igni_core.core.documents.schemas import DocumentText
+from igni_core.core.documents.window import ReadWindow
 from igni_core.core.documents.xlsx_reader import XlsxDocumentReader
 
 
@@ -40,7 +41,7 @@ class DocumentReaders:
         """Every extension a reader claims, with its dot, lower case."""
         return frozenset(self._by_extension)
 
-    def read(self, path: Path) -> DocumentText | None:
-        """The document's text or note; ``None`` when no reader claims the file."""
+    def read(self, path: Path, window: ReadWindow | None = None) -> DocumentText | None:
+        """The document's text in ``window`` or its note; ``None`` when no reader claims the file."""
         reader = self._by_extension.get(path.suffix.lower())
-        return reader.read(path) if reader is not None else None
+        return reader.read(path, window) if reader is not None else None

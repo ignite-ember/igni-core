@@ -14,7 +14,9 @@ igni leverages Agno's toolkit system to give agents capabilities. Each agent get
 > in an agent's `tools:` frontmatter is not a no-op: it raises
 > `Unknown tool: 'Read'` when the agent is built. This is a deliberate
 > divergence from Claude Code's tool catalog; see `CLAUDE_CODE_PARITY.md`
-> row 22.
+> row 22. `ReadDocument` is not a general read tool: it reads only the
+> document formats `cat` cannot show (PDF, Word, Excel, PowerPoint, and
+> CSV/TSV as a table), and sends a plain-text file back to the shell.
 
 The actual tool list registered on the main team at session boot:
 
@@ -25,6 +27,7 @@ The actual tool list registered on the main team at session boot:
 | `Edit` | `IgniEditTools` (custom) | Targeted string-replacement editing. Kept dedicated because `sed` is fragile. |
 | `Schedule` | `ScheduleTools` (custom) | Schedule tasks for later or recurring execution. |
 | `NotebookEdit` | `NotebookTools` (custom) | Read and edit Jupyter notebook cells. |
+| `ReadDocument` | `ReadDocumentTools` (custom) | Read a PDF, Word, Excel, PowerPoint, CSV or TSV file inside the project as text. |
 | `WebSearch` | `DuckDuckGoTools` | Web search (when `permissions.web_search != "deny"`). Comes with igni-core: its `agno[ddg]` dependency brings the `ddgs` package the toolkit uses. |
 | `WebFetch` | `WebTools` (custom) | Fetch and extract URL content (when `permissions.web_fetch != "deny"`). |
 | `Orchestrate` | `OrchestrateTools` (custom) | Spawn sub-teams from the agent pool. |
@@ -41,6 +44,7 @@ not on this list raises `Unknown tool` when the agent is built.
 | `Bash` | yes | yes | `BashOutput` is an accepted alias for the same toolkit |
 | `Schedule` | yes | yes | Also appended automatically to every sub-agent that has any tools |
 | `NotebookEdit` | yes | yes | |
+| `ReadDocument` | yes | yes | Every bundled agent that has `Bash` declares it |
 | `WebSearch` | yes | yes | |
 | `WebFetch` | yes | yes | |
 | `Visualize` | yes | **no** | Used by the bundled `visualizer` sub-agent; not offered to ephemeral agents |
@@ -136,6 +140,62 @@ edit_tools = IgniEditTools(base_dir="/path/to/project")
 - `create_file(file_path, content)` — create a new file
 
 **Why custom?** Agno's built-in `FileTools.save_file` overwrites the entire file. For coding, targeted edits are safer — they produce smaller diffs, reduce merge conflicts, and are easier to review.
+
+---
+
+## Document Reading
+
+### ReadDocument (ReadDocumentTools)
+
+Reads a document the shell cannot show as text, with the same readers and
+caps as an attached file (`core/documents/`), so the model sees one format
+whichever way a document arrives. Plain-text and code files are not
+documents: the tool says so and the model reads them with `Bash`.
+
+```python
+from igni_core.core.tools.read_document import ReadDocumentTools
+
+ReadDocumentTools(base_dir="/path/to/project")
+```
+
+**Function:** `read_document(path, part="")`
+
+- `path` — absolute, `~`-relative or relative to the project.
+- `part` — optional range: `"21-40"`, `"21-"` or `"21"`. It counts PDF
+  pages, PowerPoint slides, workbook sheets, CSV/TSV rows and Word
+  paragraphs (a table counts as one). `"Sales!501-"` reads rows of one
+  sheet.
+
+| Format | Extensions | Text | Cap |
+|---|---|---|---|
+| PDF | `.pdf` | each page under `--- Page n ---` | 100,000 characters |
+| Excel | `.xlsx`, `.xlsm` | each sheet as a Markdown table under `--- Sheet: name ---` | 20 sheets, 500 rows a sheet |
+| Word | `.docx` | headings as `#` lines, paragraphs, tables as Markdown | 100,000 characters |
+| PowerPoint | `.pptx` | each slide under `--- Slide n ---`, with tables and speaker notes | 100 slides |
+| CSV / TSV | `.csv`, `.tsv` | one Markdown table | 500 rows |
+
+Every format also stops at 100,000 characters and after 15 seconds. A cut
+ends with the attachment's note plus the part to read next, for example
+`[Rows truncated at 500 of 2000. To read on, call read_document with part="501-".]`.
+An attached document that is cut ends with the same note, so the model can
+read on with the tool.
+
+The text sits inside the untrusted-output block, below a
+`[Text extracted from <path> (<count>):]` line, exactly as an attached
+document's does. Every refusal is a one-line note: plain text, a binary
+format no reader claims, a legacy `.xls`/`.doc`/`.ppt`, password-protected,
+too large, no text layer, a missing file, a directory, a `part` that is not
+a range or starts past the end, and a sheet the workbook lacks.
+
+**Access.** Only files inside the project (`base_dir`, which a worktree
+spawn moves to its worktree) are read; links are followed before the check.
+Private keys, credential stores and igni's own settings (`config.yaml*`,
+`config.yml*`, `settings*.json`, `credentials.json*` in a `.igni` or
+`.ember` folder) are refused wherever they are. In the default mode it asks,
+as a shell read does; an allow rule (`ReadDocument`, or `ReadDocument(reports/*)`
+for its `path`) lets it run. Plan mode and `--read-only` run it, Bypass runs it
+without its last check (a read of a key still asks), and a deny rule naming it
+wins in every mode. `permissions.file_read` still governs nothing.
 
 ---
 
@@ -459,20 +519,21 @@ Each built-in agent's tools are declared in the `tools:` frontmatter of its
 
 | Agent | Declared `tools:` |
 |---|---|
-| `explorer` | `WebFetch, WebSearch, Bash` |
-| `architect` | `WebSearch, Bash` |
-| `plan_researcher` | `Bash, WebFetch, WebSearch` |
-| `editor` | `Write, Edit, Bash` |
-| `docs` | `Write, Edit, Bash` |
-| `qa` | `Write, Edit, Bash` |
-| `simplifier` | `Edit, Bash` |
-| `debugger` | `Edit, Bash` |
-| `reviewer` | `WebFetch, WebSearch, Bash` |
-| `security` | `WebSearch, Bash` |
+| `explorer` | `WebFetch, WebSearch, Bash, ReadDocument` |
+| `architect` | `WebSearch, Bash, ReadDocument` |
+| `plan_researcher` | `Bash, WebFetch, WebSearch, ReadDocument` |
+| `editor` | `Write, Edit, Bash, ReadDocument` |
+| `docs` | `Write, Edit, Bash, ReadDocument` |
+| `qa` | `Write, Edit, Bash, ReadDocument` |
+| `simplifier` | `Edit, Bash, ReadDocument` |
+| `debugger` | `Edit, Bash, ReadDocument` |
+| `reviewer` | `WebFetch, WebSearch, Bash, ReadDocument` |
+| `security` | `WebSearch, Bash, ReadDocument` |
 | `visualizer` | `Visualize` |
 
 Every one of them reaches files through `Bash` — none names a read, grep,
-glob or list toolkit, because none exists. `visualizer` is the only one
+glob or list toolkit, because none exists. Each one with `Bash` also has
+`ReadDocument`, for the PDF and Office files `cat` cannot show. `visualizer` is the only one
 holding `Visualize`. (CodeIndex's `data-architect` reaches its tool through
 the extension's MCP server — `mcp_servers: [ext:igni.codeindex]`.)
 

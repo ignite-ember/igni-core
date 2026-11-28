@@ -37,6 +37,7 @@ from igni_core.core.broadcast_schema import BroadcastSink
 from igni_core.core.tools.edit import FileEditNotifier, IgniEditTools
 from igni_core.core.tools.notebook import NotebookTools
 from igni_core.core.tools.process_supervisor import ProcessSupervisor
+from igni_core.core.tools.read_document import ReadDocumentTools
 from igni_core.core.tools.schedule import ScheduleTools
 from igni_core.core.tools.shell import IgniShellTools
 from igni_core.core.tools.visualize import VisualizeTools
@@ -426,6 +427,15 @@ class VisualizeSpec(ToolSpec):
     ephemeral_visible: bool = False
 
 
+class ReadDocumentSpec(ToolSpec):
+    """Document reader; asks like a shell read unless the mode or a rule allows it."""
+
+    name: str = "ReadDocument"
+    agno_function_names: tuple[str, ...] = ("read_document",)
+    confirm_function_names: tuple[str, ...] = ("read_document",)
+    toolkit_cls: type[Toolkit] = ReadDocumentTools
+
+
 class ToolSpecCatalog:
     """Ordered catalog of :class:`ToolSpec` rows.
 
@@ -591,5 +601,6 @@ class ToolSpecCatalog:
                 ScheduleSpec(),
                 NotebookSpec(),
                 VisualizeSpec(),
+                ReadDocumentSpec(),
             ]
         )

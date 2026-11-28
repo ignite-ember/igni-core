@@ -55,6 +55,7 @@ class ToolNameCatalog:
         # ever matched ``fetch_url``, so any ``fetch_json`` call slipped
         # past every anti-case unnoticed.
         "WebFetch": ["fetch_url", "fetch_json"],
+        "ReadDocument": ["read_document"],
         # All ScheduleTools functions — without this, ``Schedule`` falls
         # through unchanged and the matcher looks for a literal function
         # name "Schedule" that never exists, so positive cases that

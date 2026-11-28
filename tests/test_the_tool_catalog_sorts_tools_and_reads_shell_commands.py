@@ -43,6 +43,8 @@ _READS = [
     "WebFetch",
     "fetch_url",
     "fetch_json",
+    "ReadDocument",
+    "read_document",
 ]
 
 
