@@ -1,6 +1,6 @@
 """No source file may contain a control byte.
 
-`clients/web/src/components/panels/HooksPanel.tsx` had a literal NUL in
+`clients/web/src/components/panels/HooksPanel.tsx` (now `hooks/hooksView.ts`) had a literal NUL in
 it. Not a corruption — a deliberate separator, joining a hook's fields
 into a dedup key with a byte no field can contain, which is the right
 choice. It was written as a raw byte rather than the `\\u0000` escape.
@@ -120,7 +120,7 @@ def test_no_source_file_contains_a_control_byte():
 @needs_app
 @pytest.mark.parametrize(
     "path",
-    ["clients/web/src/components/panels/HooksPanel.tsx"],
+    ["clients/web/src/components/panels/hooks/hooksView.ts"],
 )
 def test_the_file_that_motivated_this_is_readable(path):
     """The specific case, pinned.
