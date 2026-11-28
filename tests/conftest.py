@@ -1,6 +1,7 @@
 """Shared test fixtures."""
 
 import os
+import tempfile
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -162,6 +163,16 @@ def _isolate_user_settings(tmp_path_factory, monkeypatch):
     monkeypatch.setattr("pathlib.Path.home", lambda: fake_home)
     monkeypatch.setattr("pathlib.Path.cwd", lambda: fake_cwd)
     monkeypatch.setenv("HOME", str(fake_home))
+
+
+#: The one Hugging Face cache every test shares, across tests and runs.
+SHARED_HF_CACHE = Path(tempfile.gettempdir()) / "igni-test-hf-cache"
+
+
+@pytest.fixture(autouse=True)
+def _one_model_cache(monkeypatch):
+    """A decisions service a test starts downloads Laya (~800 MB) once, not into each test's home."""
+    monkeypatch.setenv("HF_HOME", str(SHARED_HF_CACHE))
 
 
 @pytest.fixture(autouse=True)
