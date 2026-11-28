@@ -261,6 +261,11 @@ class BackendServer:
     def processing(self) -> bool:
         return self.controllers.runs.is_processing()
 
+    @property
+    def turn_in_progress(self) -> bool:
+        """A streamed turn is working, so a new message is queued for it."""
+        return self.controllers.runs.turn_in_progress
+
     def activity(self) -> SessionActivity:
         """Running, waiting on a person, or idle (``backend/activity.py``)."""
         waiting = sum(len(m.requirements) for m in self.controllers.hitl.waiting_messages())
