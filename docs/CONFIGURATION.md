@@ -892,8 +892,8 @@ the local Hugging Face cache. On a machine that can reach huggingface.co, run
 `/tmp/laya/hub/models--convaiinnovations--laya` into the target machine's
 cache (`~/.cache/huggingface/hub` by default), or set `HF_HOME` or
 `HF_HUB_CACHE` to a local copy for the decisions service. A missing or
-incomplete copy is refused with a message saying this; Bypass mode then asks
-rather than allows.
+incomplete copy is refused with a message saying this; Bypass mode then
+falls back to its rules alone and logs why, once.
 
 ## OpenTelemetry
 
