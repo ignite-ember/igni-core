@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import shlex
 from fnmatch import fnmatchcase
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import ClassVar
 
 
@@ -335,6 +335,12 @@ class SecretFiles:
     _WORD_JOINS: ClassVar[re.Pattern[str]] = re.compile(r"[<>=]")
     """What glues a path to a command, an option or a redirection: ``if=~/.netrc``, ``cat<.env``."""
 
+    KEYNOTE_SUFFIX: ClassVar[str] = ".key"
+    """Apple Keynote's suffix, which private keys share."""
+
+    ZIP_MAGIC: ClassVar[bytes] = b"PK\x03\x04"
+    """How a single-file Keynote document starts; no private key does."""
+
     _BACKSLASH_PATH: ClassVar[re.Pattern[str]] = re.compile(r"\\(?=[^\s'\"\\])")
     """A backslash between a Windows path's parts, not one escaping a space."""
 
@@ -364,7 +370,7 @@ class SecretFiles:
         name = folder[:-1].rsplit("/", 1)[-1]
         told = bare or "/" in lowered or "." in name.lstrip(".")
         return (
-            cls._named(name, told)
+            (cls._named(name, told) and not cls._keynote(path, name))
             or cls._browser_store(full, name)
             or any(secret_folder in folder for secret_folder in cls.FOLDERS)
             or cls._at_place(full)
@@ -381,6 +387,20 @@ class SecretFiles:
         if not told or pure.suffix not in cls.DATA_SUFFIXES:
             return False
         return any(fnmatchcase(pure.stem, glob) for glob in cls.TOLD_STEMS)
+
+    @classmethod
+    def _keynote(cls, path: str, name: str) -> bool:
+        """True when a ``.key`` on disk is a Keynote document: a bundle folder or a zip, never a key."""
+        if not name.endswith(cls.KEYNOTE_SUFFIX):
+            return False
+        target = Path(path.strip().strip("'\"")).expanduser()
+        try:
+            if target.is_dir():
+                return True
+            with target.open("rb") as handle:
+                return handle.read(len(cls.ZIP_MAGIC)) == cls.ZIP_MAGIC
+        except OSError:
+            return False
 
     @classmethod
     def _browser_store(cls, full: str, name: str) -> bool:

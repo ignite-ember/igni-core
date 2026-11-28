@@ -658,3 +658,49 @@ def test_bypass_lists_a_folder_holding_a_secret_without_asking(tmp_path, tool, a
 
     assert asyncio.run(guard.check(tool, filled)) is None
     assert asked == []
+
+
+# ── .key: a private key, unless it is a Keynote document on disk ─────
+
+
+def test_a_keynote_file_or_bundle_is_not_a_key(tmp_path) -> None:
+    single = tmp_path / "talk.key"
+    single.write_bytes(b"PK\x03\x04" + b"\x00" * 26)
+    bundle = tmp_path / "deck.key"
+    (bundle / "QuickLook").mkdir(parents=True)
+
+    assert flag_file_read(str(single)) is None
+    assert flag_file_read(str(bundle)) is None
+    assert flag_shell(f"cat {single}", None) is None
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        b"-----BEGIN PRIVATE KEY-----\nnot a real key\n-----END PRIVATE KEY-----\n",
+        b"0\x82\x04\xbd\x02\x01\x00",
+        b"PK",
+        b"",
+    ],
+    ids=["pem", "der", "short", "empty"],
+)
+def test_a_key_file_that_is_no_keynote_is_a_key(tmp_path, content) -> None:
+    path = tmp_path / "server.key"
+    path.write_bytes(content)
+
+    assert flag_file_read(str(path)) == REASON
+    assert flag_shell(f"cat {path}", None) == REASON
+
+
+def test_a_key_that_is_not_there_is_a_key(tmp_path) -> None:
+    assert flag_file_read(str(tmp_path / "missing.key")) == REASON
+
+
+def test_only_a_key_suffix_gets_the_keynote_look(tmp_path) -> None:
+    zipped = tmp_path / "bundle.pem"
+    zipped.write_bytes(b"PK\x03\x04" + b"\x00" * 26)
+    folder = tmp_path / "store.p12"
+    folder.mkdir()
+
+    assert flag_file_read(str(zipped)) == REASON
+    assert flag_file_read(str(folder)) == REASON

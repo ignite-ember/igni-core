@@ -164,7 +164,8 @@ read as slashes.
   `.env.example`, `.env.sample`, `.env.template`, `.env.dist` (or any name
   with an `example`, `sample`, `template` or `dist` part).
 - **Private keys and certificates:** `id_rsa`, `id_dsa`, `id_ecdsa`,
-  `id_ed25519` (and the `_sk` forms), `*.pem`, `*.key`, `*.p8`, `*.p12`,
+  `id_ed25519` (and the `_sk` forms), `*.pem`, `*.key` (but not a Keynote
+  document: a `.key` folder bundle or zip), `*.p8`, `*.p12`,
   `*.pfx`, `*.ppk`, `*.jks`, `*.keystore`, `*.ovpn`, `kubeconfig` and
   `*.kubeconfig`, GnuPG secret-key exports (`secring.*`, `*secret*.asc`,
   `*private*.asc`, `*secret*.gpg`, `*private*.gpg`), and everything in
