@@ -151,7 +151,8 @@ reason.
 
 Bypass lets the agent read files without asking, but never a secret: a read
 of one is always put to you first (refused in a headless run). This holds
-for the file tools (`read_file`, `search_files`) and for a shell
+for the file tools (`read_file`, `search_files`, `notebook_read`,
+`notebook_read_cell`) and for a shell
 command that prints, copies or packs the file — `cat`, `less`, `head`,
 `tail`, `grep`, `rg`, `sed`, `awk`, `jq`, `sqlite3`, `cp`, `rsync`, `tar`,
 `zip`, `base64`, `openssl`, `dd`, `vim`, PowerShell's `Get-Content`, and the
@@ -208,6 +209,13 @@ read as slashes.
   `.s3cfg`, `.boto`, `.htpasswd`, and `/etc/shadow`, `/etc/gshadow`,
   `/etc/master.passwd`. A backup next to one (`credentials.bak`) counts, and
   so does a read of the folder that holds it (`grep -r x ~/.aws`).
+- **igni's own config, credentials and settings:** `config.yaml`,
+  `config.yml`, `credentials.json` and `settings*.json` directly inside
+  `~/.igni` (or the legacy `~/.ember`), backups included
+  (`config.yaml.bak-…`), written as `~`, `$HOME`, `${HOME}` or the full
+  home path; a read of the folder itself counts (`grep -r key ~/.igni`).
+  A project's own `.igni/` and the rest of `~/.igni` (logs, databases) are
+  ordinary reads.
 - **Shell and REPL history**, which keeps whatever was typed at a prompt:
   `.bash_history`, `.zsh_history`, `.zhistory`, `.histfile`, `.sh_history`,
   `fish_history`, `.python_history`, `.psql_history`, `.mysql_history`,
