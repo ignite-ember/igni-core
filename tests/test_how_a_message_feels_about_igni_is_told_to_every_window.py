@@ -131,6 +131,9 @@ class _Runtime:
 class _Backend:
     """A run that starts ``r-2`` after an earlier ``r-1``, with the history to match."""
 
+    #: No turn works when a message arrives: it starts one.
+    turn_in_progress = False
+
     def __init__(self, frames: list[Any] | None = None, history: list[Any] | None = None) -> None:
         self.runtime = _Runtime()
         self.session_id = "s-1"
@@ -774,3 +777,20 @@ def test_the_aspect_questions():
     assert INTENSITY_QUESTION.levels == ["none", "mild", "strong", "angry"]
     for question in ASPECT_QUESTIONS:
         assert f"`{MESSAGE_FIELD}`" in question.question
+
+
+async def test_a_message_queued_for_a_working_turn_is_still_asked_about_with_no_run_of_its_own(
+    asks,
+):
+    backend = _Backend()
+    backend.turn_in_progress = True
+
+    transport, backend = await asyncio.wait_for(
+        _say("thank you!", _Laya(gesture=THANKS), backend), 5
+    )
+
+    assert _ended_cleanly(asks), "the ask does not wait for a run that never starts"
+    assert backend.runs == [], "queued for the working turn"
+    (echo,) = [m for m in transport.sent if isinstance(m, msg.UserMessageReceived)]
+    assert echo.queued is True and echo.client_id == "tab-a"
+    assert [p["message_run_id"] for p in _sentiments(transport.sent)] == [None]

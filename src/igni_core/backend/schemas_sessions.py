@@ -151,6 +151,8 @@ class BackendLike(Protocol):
     session_id: str
     project_dir: str | Path
     processing: bool
+    #: A streamed turn is working (not paused): a new message is queued for it.
+    turn_in_progress: bool
     controllers: Controllers
 
     async def shutdown(self) -> None: ...

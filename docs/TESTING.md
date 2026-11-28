@@ -52,6 +52,34 @@ Tests that exercise multiple components together but still avoid network calls a
 - Mocked httpx for web tools and CodeIndex
 - SQLite in-memory or tmp_path for storage tests
 
+### Tier 2b — The session-lifecycle matrix (minutes, real backend process)
+
+`tests/session_lifecycle/` starts the real backend (`python -m igni_core.backend --ws-port 0`,
+as the app starts it) on a temp home and project, points it at a scripted
+OpenAI-compatible model that records every request, and drives it over its
+WebSocket with the app's own messages. Every session state (idle, streaming,
+a tool running, paused on an approval, continuing after one, a sub-agent, a
+background process, errored, cancelled, after a restart) is crossed with every
+action (follow-ups, Stop, approve/deny, model switch, reconnect, reload, a second
+window, `/fork`, `/clear`, a backend restart), and the invariants in
+`invariant_checker.py` are checked after every step. Known findings are
+`xfail(strict=True)` in `known_findings.py`; a fix turns its cells red until the
+entry comes out.
+
+```bash
+# The whole matrix (about 25 minutes), or one state's row
+uv run pytest tests/session_lifecycle -m session_lifecycle -q -rxX
+uv run pytest tests/session_lifecycle/test_the_session_lifecycle_matrix.py -q -k paused
+
+# Against another checkout, e.g. a fix branch
+IGNI_LIFECYCLE_CORE_SRC=../igni-core-fix/src uv run pytest tests/session_lifecycle -q
+
+# The live tier: real sessions with the default model of a config.yaml
+IGNI_LIFECYCLE_LIVE_CONFIG=~/.igni/config.yaml uv run pytest tests/session_lifecycle/test_live_model_sessions_keep_their_history.py
+```
+
+The main CI test job deselects the marker; the `session-lifecycle` job runs it, one shard per state.
+
 ### Tier 3 — Smoke Tests (slow, optional, requires credentials)
 
 End-to-end tests that verify the full request path. These are **not** run in CI by default — they require API keys and network access.

@@ -205,6 +205,10 @@ markers = [
     # tests/conftest.py opens every folder as a trusted one; this is the way
     # back to real workspace trust, for a test whose subject it is.
     "workspace_trust: the test gets real workspace trust (folders start untrusted) instead of the suite's trust-everything default",
+    # tests/session_lifecycle/: the real backend process driven over its
+    # WebSocket against a scripted model. Minutes, not seconds; CI runs it
+    # as its own job, and the main test job deselects it.
+    "session_lifecycle: the end-to-end session-lifecycle matrix against the real backend process",
 ]
 
 [tool.ruff]

@@ -18,7 +18,7 @@ import asyncio
 import base64
 import os
 import sys
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, MutableSequence
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -298,6 +298,7 @@ class FakeSession:
         self.session_id = session_id
         self.project_dir = project_dir
         self.processing = False
+        self.turn_in_progress = False
         self.run_timeout = 600
         # The supervisor this backend process shares. The real
         # ``BackendServer`` carries one; the fake needs one too,
@@ -692,13 +693,16 @@ class HostRig:
         strict: bool = True,
         reads: SessionReadStore | None = None,
         with_reads: bool = True,
+        queue: MutableSequence[str] | None = None,
     ) -> HostRig:
         """``reads`` is the chats' read marks — a store of the rig's own unless
-        given, as every backend has one; ``with_reads=False`` builds without."""
+        given, as every backend has one; ``with_reads=False`` builds without.
+        ``queue`` is the boot session's message queue; a list of the rig's own unless given."""
         if reads is None and with_reads:
             reads = SessionReadStore(self.tmp / "global.db")
         loop = asyncio.get_running_loop()
-        queue: list[str] = []
+        if queue is None:
+            queue = []
         push = PushNotificationBridge(transport=self.transport, loop=loop, queue=queue)
         login = LoginCoordinator(backend=self.session, push_bridge=push)
         extensions = ExtensionRpc(self.registry)
