@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import posixpath
 import re
 import shlex
 from fnmatch import fnmatchcase
 from pathlib import Path, PurePosixPath
 from typing import ClassVar
+
+from igni_core.core.paths import CONFIG_DIR, LEGACY_CONFIG_DIR
 
 
 class SecretFiles:
@@ -202,6 +205,20 @@ class SecretFiles:
     SYSTEM_FILES: ClassVar[tuple[str, ...]] = ("/etc/shadow", "/etc/gshadow", "/etc/master.passwd")
     """The system's password hashes, with their backups (``/etc/shadow-``)."""
 
+    OWN_FOLDERS: ClassVar[tuple[str, ...]] = (CONFIG_DIR, LEGACY_CONFIG_DIR)
+    """igni's own folders in the home, by today's name and the one before it."""
+
+    OWN_STORES: ClassVar[tuple[str, ...]] = (
+        "config.yaml*",
+        "config.yml*",
+        "credentials.json*",
+        "settings*.json*",
+    )
+    """igni's own config, credentials and settings in those folders, with their backups."""
+
+    _HOME_PREFIX: ClassVar[re.Pattern[str]] = re.compile(r"^(~|\$home|\$\{home\})")
+    """How a path or a command spells the home folder."""
+
     CHROMIUM_PROFILE: ClassVar[re.Pattern[str]] = re.compile(
         r"/(google/chrome[^/]*|google-chrome[^/]*|chromium|microsoft edge[^/]*|microsoft/edge[^/]*"
         r"|microsoft-edge[^/]*|bravesoftware/brave-browser[^/]*|vivaldi|opera software"
@@ -375,6 +392,7 @@ class SecretFiles:
             or any(secret_folder in folder for secret_folder in cls.FOLDERS)
             or cls._at_place(full)
             or cls._holds_place(folder)
+            or cls._igni_own(lowered)
         )
 
     @classmethod
@@ -424,6 +442,20 @@ class SecretFiles:
     @classmethod
     def _holds_place(cls, folder: str) -> bool:
         return any(folder.endswith(place.rsplit("/", 1)[0] + "/") for place in cls.PLACES)
+
+    @classmethod
+    def _igni_own(cls, lowered: str) -> bool:
+        """True for igni's own config, credentials or settings in the home, or the folder holding them."""
+        home = str(Path.home()).replace("\\", "/").lower().rstrip("/")
+        path = posixpath.normpath(cls._HOME_PREFIX.sub(lambda _: home, lowered))
+        parent, _, name = path.rpartition("/")
+        for own in cls.OWN_FOLDERS:
+            folder = f"{home}/{own}"
+            if path == folder or (
+                parent == folder and any(fnmatchcase(name, glob) for glob in cls.OWN_STORES)
+            ):
+                return True
+        return False
 
     @classmethod
     def _segment_reads(cls, segment: str) -> bool:

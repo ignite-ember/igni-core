@@ -66,6 +66,8 @@ _UNCHECKED = "could not be checked for safety"
 READ_ONLY_TOOLS: frozenset[str] = frozenset(
     {
         "read_file",
+        "notebook_read",
+        "notebook_read_cell",
         "list_files",
         "list_directory",
         "grep",

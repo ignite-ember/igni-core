@@ -176,6 +176,8 @@ def test_the_read_only_tools_are_exactly_these() -> None:
     assert set(READ_ONLY_TOOLS) == set(
         {
             "read_file",
+            "notebook_read",
+            "notebook_read_cell",
             "list_files",
             "list_directory",
             "grep",
