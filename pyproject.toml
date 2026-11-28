@@ -91,7 +91,7 @@ dependencies = [
     # pypdf reads an attached PDF's text into the message (core/utils/attached_pdf_text.py).
     "pypdf~=7.2.0",
     "dateparser~=1.4.0",
-    "websockets~=16.0",
+    "websockets>=16,<18",
     # Server discovery reads a TXT record in the customer's own zone,
     # for deployments that would rather publish DNS than serve a file
     # at their email domain's web root. Pure Python, no system
